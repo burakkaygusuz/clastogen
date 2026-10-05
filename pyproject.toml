@@ -29,11 +29,6 @@ Homepage = "https://github.com/burakkaygusuz/clastogen"
 Repository = "https://github.com/burakkaygusuz/clastogen"
 Issues = "https://github.com/burakkaygusuz/clastogen/issues"
 
-[project.optional-dependencies]
-config = [
-    "pyyaml>=6.0.2",
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -50,9 +45,7 @@ dev = [
     "mypy>=1.11.0",
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.8.0",
-    "pyyaml>=6.0.3",
     "ruff>=0.7.0",
-    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [tool.semantic_release]

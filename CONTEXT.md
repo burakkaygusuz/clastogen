@@ -9,7 +9,7 @@ This document records the foundational domain terms, seams, and invariants of **
 A content-addressed, defective variant of an agent prompt, model constraint, or tool definition.
 
 - **Identifier (`id`)**: 12-character SHA-256 hash computed deterministically from `(target_symbol, operator_name, original_snippet, mutated_snippet)`.
-- **Invariance**: An identical modification to the same target always yields the exact same `Mutant.id`, enabling cross-test deduplication and persistent suppression tracking (`.clastogen/suppressions.yaml`).
+- **Invariance**: An identical modification to the same target always yields the exact same `Mutant.id`, enabling cross-test deduplication and persistent suppression tracking (`.clastogen/suppressions.toml`).
 
 ### 2. Sequential Probability Ratio Test (SPRT)
 

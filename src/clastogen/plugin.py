@@ -1,5 +1,6 @@
 import json
 import logging
+import tomllib
 from collections.abc import Generator
 from contextlib import ExitStack
 from dataclasses import asdict
@@ -31,32 +32,27 @@ logger = logging.getLogger(__name__)
 
 STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
-SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.yaml"
+SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
 
 
 def load_suppressions(root_path: Path) -> set[str]:
-    """Parses suppressed mutant IDs from <rootdir>/.clastogen/suppressions.yaml; every entry needs a reason."""
+    """Parses suppressed mutant IDs from <rootdir>/.clastogen/suppressions.toml; every entry needs a reason."""
     candidate = root_path / SUPPRESSIONS_PATH
     if not candidate.is_file():
         return set()
     try:
-        import yaml
-    except ImportError as exc:
-        raise pytest.UsageError(
-            f"Found suppression file '{candidate}', but PyYAML is not installed. "
-            "Install 'clastogen[config]' to enable suppressions."
-        ) from exc
-
-    raw_data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
-    items = raw_data.get("suppressions") if isinstance(raw_data, dict) else None
+        raw_data = tomllib.loads(candidate.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise pytest.UsageError(f"Invalid TOML in '{candidate}': {exc}") from exc
+    items = raw_data.get("suppressions")
     if not isinstance(items, list):
-        raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected a list under 'suppressions:'.")
+        raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected [[suppressions]] tables.")
 
     parsed: set[str] = set()
     for entry in items:
         if not isinstance(entry, dict):
             raise pytest.UsageError(
-                f"Suppression entry {entry!r} in '{candidate}' must be a mapping: - mutant_id: '<id>', reason: '<why>'."
+                f"Suppression entry {entry!r} in '{candidate}' must be a table with mutant_id and reason."
             )
         m_id = str(entry.get("mutant_id") or "").strip()
         reason = str(entry.get("reason") or "").strip()

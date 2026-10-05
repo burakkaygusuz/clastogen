@@ -180,13 +180,12 @@ Both tests pass in a normal run, yet only 2 of the 5 mutants are caught (**Mutat
 
 When a mutant survives because the foundation model inherently obeys the rule from pre-training (an equivalent mutant), suppress it so it does not skew your score. Suppressed mutants are reported as `SUPPRESSED` and excluded from the Mutation Score. Mutant IDs are the 12-character hashes printed in the summary, for example `7d1281020f96` (the inverted refund rule in the [Demo](#demo)).
 
-List them in `.clastogen/suppressions.yaml` under your pytest `rootdir`. Every entry needs a `reason`, and reading the file needs the `config` extra (`pip install "clastogen[config]"`):
+List them in `.clastogen/suppressions.toml` under your pytest `rootdir`. Every entry needs a `reason`:
 
-```yaml
-suppressions:
-  - mutant_id: "7d1281020f96"
-    reason: "Model refuses large refunds regardless of the prompt"
-    reviewed_by: "burak"
+```toml
+[[suppressions]]
+mutant_id = "7d1281020f96"
+reason = "Model refuses large refunds regardless of the prompt"
 ```
 
 A malformed file aborts a `--clastogen` run with a usage error; runs without `--clastogen` never read it.
@@ -259,7 +258,7 @@ Scenario 4 of the simulation script, defaults (`min_rate=0.90, tolerance=0.20, c
 ## Known Limitations (v0.1)
 
 1. **Mutation Operator Scope:** Rules are found lexically: a sentence is a candidate only if it contains a keyword such as `must`, `never`, `always`, `avoid`, `only`, `may not` or `require`. Rules phrased without one (for example conditionals like "Escalate to a human if …") are not mutated. Three operators run on each rule: `delete_constraint`, `invert_negation` and `change_threshold` (first number ×10). Semantic LLM-guided mutations, RAG context poisoning, and tool schema mutators are planned for v0.2/v0.3.
-2. **Equivalent Mutants:** A prompt mutation can occasionally result in identical agent behavior (e.g. if the underlying foundation model inherently obeys a safety constraint from pre-training). Clastogen handles this pragmatically via triage suppression (`.clastogen/suppressions.yaml`) rather than automated semantic equivalence proofs.
+2. **Equivalent Mutants:** A prompt mutation can occasionally result in identical agent behavior (e.g. if the underlying foundation model inherently obeys a safety constraint from pre-training). Clastogen handles this pragmatically via triage suppression (`.clastogen/suppressions.toml`) rather than automated semantic equivalence proofs.
 3. **Effect Size:** The SPRT looks for an absolute drop of `delta` (default 0.30) from a 10-run Laplace baseline, which caps p0 at 11/12 ≈ 0.917. Small regressions such as 0.95 → 0.88 need roughly 60-70 runs per mutant to decide, so with `max_steps=20` they end `INCONCLUSIVE` or `SURVIVED`. Lower `delta` and raise `max_steps` per test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`) when such drops matter, at the matching API cost.
 4. **Differential Execution:** Clastogen deduplicates already-killed mutants across tests, but does not yet construct a pre-execution static dependency graph.
 
