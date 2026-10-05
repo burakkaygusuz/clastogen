@@ -51,8 +51,8 @@ def _fisher_upper_tail(a: int, c: int, n: int) -> float:
 
 
 def _validate_pass_rate_inputs(min_rate: float, tolerance: float, confidence: float, max_samples: int) -> None:
-    if not (0.0 < min_rate <= 1.0):
-        raise ValueError(f"min_rate must be in (0, 1], got {min_rate}")
+    if not (0.0 < min_rate < 1.0):
+        raise ValueError(f"min_rate must be in (0, 1), got {min_rate}")
     if not (0.0 < tolerance < 1.0):
         raise ValueError(f"tolerance must be in (0, 1), got {tolerance}")
     if not (0.5 < confidence < 1.0):
@@ -79,7 +79,7 @@ def evaluate_pass_rate(
 
     Args:
         evaluator: Zero-argument callable returning True (pass) or False (fail).
-        min_rate: Pass probability that must be accepted, in (0.0, 1.0].
+        min_rate: Pass probability that must be accepted, in (0.0, 1.0).
         tolerance: Width of the indifference zone below min_rate, in (0.0, 1.0).
         confidence: Probability of the correct decision at both ends of the indifference zone, in (0.5, 1.0).
         max_samples: Maximum number of evaluator calls.
