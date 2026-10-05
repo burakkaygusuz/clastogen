@@ -1,0 +1,44 @@
+# Bytecode and runtime caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging and builds
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Testing, typing, and linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and OS artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Clastogen report output (--clastogen-json / --clastogen-html)
+reports/
