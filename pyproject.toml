@@ -1,6 +1,6 @@
 [project]
 name = "clastogen"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mutation testing and statistical assertion framework for LLMs and AI Agents"
 readme = "README.md"
 license = "MIT"
