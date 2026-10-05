@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from decimal import Decimal
+from itertools import zip_longest
 
 from clastogen.models import Mutant
 
@@ -46,15 +47,21 @@ class PromptMutator:
         return [
             cleaned
             for line in self.SENTENCE_SPLIT_PATTERN.split(prompt)
-            if (cleaned := line.strip().lstrip("*- ").strip())
+            if (cleaned := re.sub(r"^[-*]\s+", "", line.strip()))
             and len(cleaned) > 10
             and self.RULE_PATTERN.search(cleaned)
         ]
 
     def _delete_mutant(self, prompt: str, rule: str) -> Mutant | None:
         """Removes rule with its bullet and trailing punctuation; None when the prompt is unchanged."""
-        clean_pat = re.compile(rf"[ \t]*(?:[-*]\s*)?{re.escape(rule)}[.?!]?[ \t]*\n?")
-        mutated = clean_pat.sub("", prompt).strip()
+        clean_pat = re.compile(rf"[ \t]*(?:[-*]\s+)?{re.escape(rule)}[.?!]?([ \t]*)(\n?)")
+
+        def join(m: re.Match[str]) -> str:
+            if m.start() == 0 or prompt[m.start() - 1] == "\n":
+                return ""
+            return m[2] or ("" if m.end() == len(prompt) else " ")
+
+        mutated = clean_pat.sub(join, prompt).strip()
         mutated = re.sub(r"\n\s*\.\s*\n", "\n", mutated)
         mutated = re.sub(r"\n{3,}", "\n\n", mutated)
         if mutated == prompt:
@@ -125,5 +132,9 @@ class PromptMutator:
             selected_rules = candidates
 
         operators = (self._delete_mutant, self._invert_mutant, self._threshold_mutant)
-        mutants = [m for rule in selected_rules for op in operators if (m := op(prompt, rule))]
+        per_rule = [
+            [m for op in operators[i % 3 :] + operators[: i % 3] if (m := op(prompt, rule))]
+            for i, rule in enumerate(selected_rules)
+        ]
+        mutants = [m for group in zip_longest(*per_rule) for m in group if m]
         return mutants[:max_mutants]
