@@ -1,7 +1,6 @@
 import pytest
 
-from clastogen.stats import compute_wilson_interval
-from clastogen.stats.assertions import _binom_upper_tail, _fisher_upper_tail
+from clastogen.stats import _binom_upper_tail, _fisher_upper_tail, compute_wilson_interval
 
 # Reference values computed with scipy.stats (binomtest / fisher_exact).
 

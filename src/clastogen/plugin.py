@@ -336,32 +336,10 @@ def _run_mutation(
 
 
 def _to_payload(baselines: list[BaselineRecord], results: list[MutantExecution]) -> RecordsPayload:
+    # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
-        "baselines": [
-            {
-                "test_id": b.test_id,
-                "target": b.target,
-                "successes": b.successes,
-                "runs": b.runs,
-                "p0": b.p0,
-                "stable": b.stable,
-                "error": b.error,
-            }
-            for b in baselines
-        ],
-        "results": [
-            {
-                "test_id": r.test_id,
-                "target": r.target,
-                "mutant_id": r.mutant_id,
-                "description": r.description,
-                "status": str(r.status),
-                "sample_count": r.sample_count,
-                "llr": r.llr,
-                "error": r.error,
-            }
-            for r in results
-        ],
+        "baselines": [asdict(b) for b in baselines],
+        "results": [{**asdict(r), "status": str(r.status)} for r in results],
     }
 
 
