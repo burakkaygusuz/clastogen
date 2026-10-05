@@ -1,5 +1,7 @@
 # clastogen 🧬
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/burakkaygusuz/clastogen/badge)](https://scorecard.dev/viewer/?uri=github.com/burakkaygusuz/clastogen)
+
 Mutation testing and statistical assertion framework for LLMs and AI Agents.
 
 Clastogen injects controlled faults (deleting constraints, inverting rules, changing numeric limits) into your system prompts to verify whether your test suite actually catches prompt breakages, using Sequential Probability Ratio Tests (SPRT) to stop early and save API budget.
