@@ -1,0 +1,13 @@
+name: Feature request
+description: Suggest a capability clastogen is missing.
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What are you trying to test, and why is it hard today?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed solution
