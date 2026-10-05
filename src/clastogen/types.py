@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Any, TypedDict
 
 
 class Decision(StrEnum):
@@ -19,3 +20,10 @@ class MutantStatus(StrEnum):
     ERROR = "ERROR"
     SKIPPED = "SKIPPED"
     SUPPRESSED = "SUPPRESSED"
+
+
+class RecordsPayload(TypedDict):
+    """Records of one marked test; execnet serializes only exact builtin types, so statuses travel as plain str."""
+
+    baselines: list[dict[str, Any]]
+    results: list[dict[str, Any]]
