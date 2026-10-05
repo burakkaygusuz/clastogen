@@ -1,5 +1,6 @@
 import json
 import logging
+import tomllib
 from collections.abc import Generator
 from contextlib import ExitStack
 from dataclasses import asdict
@@ -31,32 +32,27 @@ logger = logging.getLogger(__name__)
 
 STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
-SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.yaml"
+SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
 
 
 def load_suppressions(root_path: Path) -> set[str]:
-    """Parses suppressed mutant IDs from <rootdir>/.clastogen/suppressions.yaml; every entry needs a reason."""
+    """Parses suppressed mutant IDs from <rootdir>/.clastogen/suppressions.toml; every entry needs a reason."""
     candidate = root_path / SUPPRESSIONS_PATH
     if not candidate.is_file():
         return set()
     try:
-        import yaml
-    except ImportError as exc:
-        raise pytest.UsageError(
-            f"Found suppression file '{candidate}', but PyYAML is not installed. "
-            "Install 'clastogen[config]' to enable suppressions."
-        ) from exc
-
-    raw_data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
-    items = raw_data.get("suppressions") if isinstance(raw_data, dict) else None
+        raw_data = tomllib.loads(candidate.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise pytest.UsageError(f"Invalid TOML in '{candidate}': {exc}") from exc
+    items = raw_data.get("suppressions")
     if not isinstance(items, list):
-        raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected a list under 'suppressions:'.")
+        raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected [[suppressions]] tables.")
 
     parsed: set[str] = set()
     for entry in items:
         if not isinstance(entry, dict):
             raise pytest.UsageError(
-                f"Suppression entry {entry!r} in '{candidate}' must be a mapping: - mutant_id: '<id>', reason: '<why>'."
+                f"Suppression entry {entry!r} in '{candidate}' must be a table with mutant_id and reason."
             )
         m_id = str(entry.get("mutant_id") or "").strip()
         reason = str(entry.get("reason") or "").strip()
@@ -95,6 +91,8 @@ def _run_trial(item: pytest.Item) -> bool:
         raise TrialError(f"fixture reset failed: {type(exc).__name__}: {exc}") from exc
     try:
         item.runtest()
+    except pytest.xfail.Exception as exc:
+        raise TrialSkipped from exc
     except (AssertionError, pytest.fail.Exception):
         return False
     except pytest.skip.Exception as exc:
@@ -336,32 +334,10 @@ def _run_mutation(
 
 
 def _to_payload(baselines: list[BaselineRecord], results: list[MutantExecution]) -> RecordsPayload:
+    # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
-        "baselines": [
-            {
-                "test_id": b.test_id,
-                "target": b.target,
-                "successes": b.successes,
-                "runs": b.runs,
-                "p0": b.p0,
-                "stable": b.stable,
-                "error": b.error,
-            }
-            for b in baselines
-        ],
-        "results": [
-            {
-                "test_id": r.test_id,
-                "target": r.target,
-                "mutant_id": r.mutant_id,
-                "description": r.description,
-                "status": str(r.status),
-                "sample_count": r.sample_count,
-                "llr": r.llr,
-                "error": r.error,
-            }
-            for r in results
-        ],
+        "baselines": [asdict(b) for b in baselines],
+        "results": [{**asdict(r), "status": str(r.status)} for r in results],
     }
 
 
@@ -425,10 +401,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         _write_report(html_path, render_html(summary, state.results, state.baselines))
 
     fail_under = session.config.getoption("--clastogen-fail-under", None)
-    if fail_under is not None and _fail_under_failed(summary, float(fail_under)):
-        session.exitstatus = pytest.ExitCode.TESTS_FAILED
-
-    if summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total:
+    all_errors = summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total
+    fail_under_failed = fail_under is not None and _fail_under_failed(summary, float(fail_under))
+    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or all_errors):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
@@ -511,7 +486,7 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
         terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
 
     fail_under = config.getoption("--clastogen-fail-under", None)
-    if fail_under is not None:
+    if fail_under is not None and exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
         _write_fail_under(terminalreporter, summary, float(fail_under))
     if not empty:
         terminalreporter.write_sep("=", bold=True)
