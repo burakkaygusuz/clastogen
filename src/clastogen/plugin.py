@@ -95,6 +95,8 @@ def _run_trial(item: pytest.Item) -> bool:
         raise TrialError(f"fixture reset failed: {type(exc).__name__}: {exc}") from exc
     try:
         item.runtest()
+    except pytest.xfail.Exception as exc:
+        raise TrialSkipped from exc
     except (AssertionError, pytest.fail.Exception):
         return False
     except pytest.skip.Exception as exc:
@@ -403,10 +405,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         _write_report(html_path, render_html(summary, state.results, state.baselines))
 
     fail_under = session.config.getoption("--clastogen-fail-under", None)
-    if fail_under is not None and _fail_under_failed(summary, float(fail_under)):
-        session.exitstatus = pytest.ExitCode.TESTS_FAILED
-
-    if summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total:
+    all_errors = summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total
+    fail_under_failed = fail_under is not None and _fail_under_failed(summary, float(fail_under))
+    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or all_errors):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
@@ -489,7 +490,7 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
         terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
 
     fail_under = config.getoption("--clastogen-fail-under", None)
-    if fail_under is not None:
+    if fail_under is not None and exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
         _write_fail_under(terminalreporter, summary, float(fail_under))
     if not empty:
         terminalreporter.write_sep("=", bold=True)
