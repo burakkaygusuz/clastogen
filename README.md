@@ -97,6 +97,24 @@ def ask(question: str) -> str:
 
 `pytest --clastogen -n 4` works: each worker returns its records with the test report and the controller merges them into one summary. Killed-mutant short-circuiting and baseline measurement are per-process, so every worker measures its own baselines and may re-evaluate a mutant already killed on another worker. Parallel runs trade some redundant work for wall-clock time.
 
+#### CI
+
+Set the flags once in `pyproject.toml` with pytest's `addopts`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "--clastogen --clastogen-fail-under=80 --clastogen-json=clastogen.json"
+```
+
+A GitHub Actions job then needs no Clastogen-specific setup:
+
+```yaml
+- run: pip install clastogen
+- run: pytest --junitxml=junit.xml
+```
+
+The run fails when the mutation score drops below the threshold. pytest's `--junitxml` also carries each marked test's Clastogen records as a `clastogen_records` property; use `--clastogen-json` when a tool needs to parse them.
+
 ---
 
 ### 2. Statistical Assertions (Python API)
