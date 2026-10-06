@@ -1,8 +1,11 @@
-# clastogen 🧬
+# Clastogen
 
+![Clastogen logo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/logo.svg)
+
+**Mutation testing and statistical assertion framework for LLMs and AI Agents.**
+
+[![PyPI](https://img.shields.io/pypi/v/clastogen)](https://pypi.org/project/clastogen/)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/burakkaygusuz/clastogen/badge)](https://scorecard.dev/viewer/?uri=github.com/burakkaygusuz/clastogen)
-
-Mutation testing and statistical assertion framework for LLMs and AI Agents.
 
 Clastogen injects controlled faults (deleting constraints, inverting rules, changing numeric limits) into your system prompts to verify whether your test suite actually catches prompt breakages, using Sequential Probability Ratio Tests (SPRT) to stop early and save API budget.
 
@@ -11,16 +14,12 @@ Clastogen injects controlled faults (deleting constraints, inverting rules, chan
 ## Installation
 
 ```bash
-# Install directly from GitHub
-pip install git+https://github.com/burakkaygusuz/clastogen.git
-
-# Or for local development with uv
-git clone https://github.com/burakkaygusuz/clastogen.git
-cd clastogen
-uv sync --dev
+pip install clastogen
+# or
+uv add --dev clastogen
 ```
 
-Note: PyPI publication is pending. Use git installation or editable local checkout.
+For local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
