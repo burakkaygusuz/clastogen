@@ -1,6 +1,7 @@
 import json
 import logging
 import tomllib
+from collections import Counter
 from collections.abc import Generator
 from contextlib import ExitStack
 from dataclasses import asdict
@@ -405,66 +406,119 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     fail_under_failed = fail_under is not None and _fail_under_failed(summary, float(fail_under))
     if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or all_errors):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    if fail_under_failed and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
+        # pytest prints shouldfail in red just above its final "N passed" line; keep a reason it already set (-x).
+        detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
+        message = f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
+        prev = session.shouldfail
+        session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message
 
 
-def _write_fail_under(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, threshold: float) -> None:
-    if not _fail_under_failed(summary, threshold):
-        return
-    detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
-    terminalreporter.write_line(f"Clastogen fail-under {threshold:.1f}%: FAILED ({detail})")
+_STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
+    MutantStatus.SURVIVED: {"red": True, "bold": True},
+    MutantStatus.INCONCLUSIVE: {"yellow": True},
+    MutantStatus.ERROR: {"purple": True},
+    MutantStatus.KILLED: {"green": True},
+    MutantStatus.SKIPPED: {"light": True},
+    MutantStatus.SUPPRESSED: {"light": True},
+}
 
 
-def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord]) -> None:
+def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord], verbose: bool) -> None:
+    """Writes one line for all stable baselines (one per test with -v) after the full list of flaky ones."""
     stable = [b for b in baselines if b.stable]
     flaky = [b for b in baselines if not b.stable]
-    if stable:
-        terminalreporter.write_sep("-", "Baselines (Laplace p0 used for SPRT)")
-        for b in stable:
-            terminalreporter.write_line(
-                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed, p0={b.p0:.3f} -> {b.target}"
-            )
     if flaky:
-        terminalreporter.write_sep("-", "Flaky baselines (mutation testing rejected)")
+        title = f"Flaky tests (not mutated: baseline pass rate < {MIN_BASELINE_RATE:.0%})"
+        terminalreporter.write_sep("-", title, yellow=True)
         for b in flaky:
             reason = f" [{b.error}]" if b.error else ""
             terminalreporter.write_line(
-                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed{reason} -> {b.target}"
+                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed{reason} -> {b.target}", yellow=True
             )
+    else:
+        terminalreporter.write_sep("-")
+    if not stable:
+        return
+    if verbose:
+        for b in stable:
+            terminalreporter.write_line(
+                f"Baseline {b.test_id}: {b.successes}/{b.runs} runs passed, p0={b.p0:.3f} -> {b.target}", light=True
+            )
+        return
+    rates = sorted({f"{b.successes}/{b.runs}": b.successes / b.runs for b in stable}.items(), key=lambda kv: kv[1])
+    passed = rates[0][0] if len(rates) == 1 else f"{rates[0][0]}-{rates[-1][0]}"
+    terminalreporter.write_line(
+        f"Baselines: {len(stable)} stable tests, {passed} runs passed (-v shows each test)", light=True
+    )
 
 
 def _write_summary(
-    terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary
+    terminalreporter: pytest.TerminalReporter,
+    state: ClastogenPluginState,
+    summary: MutationSummary,
+    fail_under: float | None,
 ) -> None:
-    counts = summary.counts
+    verbose = terminalreporter.config.get_verbosity() > 0
+    order = list(STATUS_LABELS)
+    show_target = len({r.target for r in summary.results}) > 1
+    # A test is named without its file path unless another file has a test with the same name.
+    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.results}
+    clashes = {n for n, c in Counter(short.values()).items() if c > 1}
+    name = {t: t if n in clashes else n for t, n in short.items()}
+    passed_in: dict[str, list[str]] = {}
+    for e in state.results:
+        if e.status == MutantStatus.SURVIVED:
+            passed_in.setdefault(e.mutant_id, []).append(name[e.test_id])
+
     terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
-    terminalreporter.write_line(f"Total Unique Mutants    : {summary.total}")
-    terminalreporter.write_line(f"Killed (Caught by Suite): {counts[MutantStatus.KILLED]}")
-    terminalreporter.write_line(f"Survived (Blind Spots)  : {counts[MutantStatus.SURVIVED]}")
-    terminalreporter.write_line(f"Inconclusive (Truncated): {counts[MutantStatus.INCONCLUSIVE]}")
-    terminalreporter.write_line(f"Execution Errors (Excl.): {counts[MutantStatus.ERROR]}")
-    terminalreporter.write_line(f"Skipped (Excl.)         : {counts[MutantStatus.SKIPPED]}")
-    terminalreporter.write_line(f"Suppressed (Excl.)      : {counts[MutantStatus.SUPPRESSED]}")
-    score_str = "N/A" if summary.score is None else f"{summary.score:.1f}%"
-    terminalreporter.write_line(f"Mutation Score          : {score_str}")
-    terminalreporter.write_sep("-", bold=False)
+    for r in sorted(summary.results, key=lambda r: order.index(r.status)):
+        details = [f"[{r.mutant_id}]"]
+        if show_target:
+            details.append(r.target)
+        if r.sample_count is not None:
+            details.append(f"{r.sample_count} runs")
+        if verbose and r.llr is not None:
+            details.append(f"LLR={r.llr:+.2f}")
+        if r.status == MutantStatus.KILLED:
+            details.append(f"by {name[r.test_id]}")
+        if r.status == MutantStatus.SURVIVED:
+            details.append(f"passed in {', '.join(passed_in[r.mutant_id])}")
+        if r.error:
+            details.append(f"[{r.error}]")
+        terminalreporter.write_line(f"{STATUS_LABELS[r.status]:<14}  {'  '.join(details)}", **_STATUS_MARKUP[r.status])
+        terminalreporter.write_line(f"    {r.description}", light=True)
 
-    for r in summary.results:
-        runs = "skipped" if r.sample_count is None else f"{r.sample_count} runs"
-        llr_str = "n/a" if r.llr is None else f"LLR={r.llr:+.2f}"
-        killer = f" (killed by {r.test_id.split('::')[-1]})" if r.status == MutantStatus.KILLED else ""
-        label = STATUS_LABELS[r.status]
-        reason = f" [{r.error}]" if r.error else ""
+    _write_baselines(terminalreporter, state.baselines, verbose)
+
+    survived = summary.counts[MutantStatus.SURVIVED]
+    if survived:
+        terminalreporter.write_line(f"{survived} survived: your tests still pass with these prompt faults.", red=True)
         terminalreporter.write_line(
-            f"  [{r.mutant_id}] {label:<16} ({runs}, {llr_str}){killer}{reason} -> {r.description}"
+            "    Add an assertion that fails for each one, or suppress its ID in .clastogen/suppressions.toml.",
+            light=True,
+        )
+    inconclusive = summary.counts[MutantStatus.INCONCLUSIVE]
+    if inconclusive:
+        terminalreporter.write_line(
+            f"{inconclusive} inconclusive: no decision after max_steps runs. Increase max_steps or delta.",
+            yellow=True,
         )
 
-    _write_baselines(terminalreporter, state.baselines)
-
-    inconclusive = counts[MutantStatus.INCONCLUSIVE]
-    if inconclusive > 0:
-        terminalreporter.write_line(
-            f"\n[Note] {inconclusive} mutant(s) inconclusive due to truncated SPRT budget (ambiguous boundary)."
-        )
+    score = "N/A" if summary.score is None else f"{summary.score:.1f}%"
+    killed = summary.counts[MutantStatus.KILLED]
+    measured = killed + survived + inconclusive
+    detail = f"{killed} of {measured} killed"
+    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.SUPPRESSED)
+    excluded = [f"{n} {status.value.lower()}" for status in unscored if (n := summary.counts[status])]
+    if excluded:
+        detail += f"; not scored: {', '.join(excluded)}"
+    # Without --clastogen-fail-under, any measured blind spot (score below 100%) shows red and N/A has no colour.
+    if fail_under is None:
+        ok = None if summary.score is None else summary.score == 100.0
+    else:
+        ok = not _fail_under_failed(summary, fail_under)
+    terminalreporter.write_line(f"Mutation Score: {score} ({detail})", bold=True, green=ok is True, red=ok is False)
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config) -> None:
@@ -477,16 +531,14 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
     if state is None or summary is None:
         return
 
+    raw_fail_under = config.getoption("--clastogen-fail-under", None)
+    fail_under = None if raw_fail_under is None else float(raw_fail_under)
     empty = summary.total == 0 and all(b.stable for b in state.baselines)
     if not empty:
-        _write_summary(terminalreporter, state, summary)
+        _write_summary(terminalreporter, state, summary, fail_under)
     elif state.marked_tests_count > 0:
         terminalreporter.write_line("Clastogen: 0 mutants generated across marked tests (check prompt constraints).")
     else:
         terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
-
-    fail_under = config.getoption("--clastogen-fail-under", None)
-    if fail_under is not None and exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
-        _write_fail_under(terminalreporter, summary, float(fail_under))
     if not empty:
         terminalreporter.write_sep("=", bold=True)

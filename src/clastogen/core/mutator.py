@@ -8,6 +8,15 @@ from itertools import zip_longest
 from clastogen.models import Mutant
 
 
+def _clip(text: str, limit: int) -> str:
+    """Shortens text to at most limit characters at a word boundary and marks the cut with an ellipsis."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    head = text[:limit] if text[limit].isspace() else text[:limit].rsplit(maxsplit=1)[0]
+    return head.rstrip(" ,.;:") + "…"
+
+
 class PromptMutator:
     """Extracts load-bearing imperative constraints and generates targeted prompt mutants."""
 
@@ -72,7 +81,7 @@ class PromptMutator:
             original_snippet=rule,
             mutated_snippet="[DELETED]",
             mutated_prompt=mutated,
-            description=f"Deleted load-bearing constraint: '{rule[:50]}...'",
+            description=f"Deleted constraint: '{_clip(rule, 60)}'",
         )
 
     def _invert_mutant(self, prompt: str, rule: str) -> Mutant | None:
@@ -88,7 +97,7 @@ class PromptMutator:
                         original_snippet=rule,
                         mutated_snippet=inverted,
                         mutated_prompt=mutated,
-                        description=f"Inverted constraint: '{rule[:40]}' -> '{inverted[:40]}'",
+                        description=f"Inverted constraint: '{_clip(rule, 45)}' -> '{_clip(inverted, 45)}'",
                     )
         return None
 
@@ -110,7 +119,7 @@ class PromptMutator:
             original_snippet=rule,
             mutated_snippet=changed,
             mutated_prompt=mutated,
-            description=f"Changed threshold: '{raw}' -> '{number}' in '{rule[:40]}'",
+            description=f"Changed threshold: '{raw}' -> '{number}' in '{_clip(rule, 50)}'",
         )
 
     def generate_mutants(self, prompt: str, max_mutants: int) -> Sequence[Mutant]:

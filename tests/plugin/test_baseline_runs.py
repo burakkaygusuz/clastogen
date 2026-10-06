@@ -22,7 +22,7 @@ def test_counted():
 """,
     )
     json_out = pytester.path / "out.json"
-    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}", "-v")
     assert result.ret == pytest.ExitCode.OK
 
     data = json.loads(json_out.read_text(encoding="utf-8"))

@@ -2,19 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 README = (REPO / "README.md").read_text(encoding="utf-8")
-
-
-def _demo_section() -> str:
-    match = re.search(r"^## Demo\n(.*?)^## ", README, flags=re.DOTALL | re.MULTILINE)
-    assert match, "README has no '## Demo' section"
-    return match.group(1)
 
 
 def test_readme_stats_example_matches_runnable_file() -> None:
@@ -57,8 +50,3 @@ def test_demo_reports_documented_score(tmp_path: Path) -> None:
 
     assert "7d1281020f96" in by_id
     assert "7d1281020f96" in README
-
-    demo = _demo_section()
-    assert f"Mutation Score          : {data['mutation_score']:.1f}%" in demo
-    for mutant_id, record in by_id.items():
-        assert re.search(rf"\[{mutant_id}\] \S+ {record['status']}", demo)

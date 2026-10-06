@@ -34,8 +34,7 @@ def test_survived_does_not_mask_killed_regardless_of_order(pytester: pytest.Pyte
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
     stdout = result.stdout.str()
-    assert "Killed (Caught by Suite): 2" in stdout
-    assert "Survived (Blind Spots)  : 0" in stdout
+    assert "Mutation Score: 100.0% (2 of 2 killed)" in stdout
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert data["counts"]["KILLED"] == 2
     assert data["counts"]["SURVIVED"] == 0
@@ -46,7 +45,9 @@ def test_test_never_touching_prompt_survives(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(agent=AGENT, test_k2="import pytest, agent\n" + _UNRELATED)
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
-    assert "Survived (Blind Spots)  : 2" in result.stdout.str()
+    stdout = result.stdout.str()
+    assert "Mutation Score: 0.0% (0 of 2 killed)" in stdout
+    assert "passed in test_unrelated" in stdout
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert data["counts"]["SURVIVED"] == 2
     assert data["mutation_score"] == 0.0
@@ -84,7 +85,7 @@ def test_strong():
 
     score = data["mutation_score"]
     assert score is not None
-    assert f"Mutation Score          : {score:.1f}%" in stdout
+    assert f"Mutation Score: {score:.1f}% (" in stdout
     assert "Adjusted" not in stdout
     assert f"Clastogen fail-under 101.0%: FAILED (score {score:.1f}%)" in stdout
     assert result.ret == pytest.ExitCode.TESTS_FAILED
@@ -92,7 +93,7 @@ def test_strong():
     assert sorted(b["stable"] for b in data["baselines"]) == [False, True, True]
     flaky = [b for b in data["baselines"] if not b["stable"]]
     assert [b["test_id"].split("::")[-1] for b in flaky] == ["test_flaky"]
-    assert "test_flaky" in stdout.split("Flaky baselines", 1)[1]
+    assert "test_flaky" in stdout.split("Flaky tests", 1)[1]
 
 
 def test_fail_under_reports_no_measurable_mutants(pytester: pytest.Pytester) -> None:
@@ -167,7 +168,7 @@ def test_errors_under_mutation():
     data = json.loads(json_out.read_text(encoding="utf-8"))
     html = html_out.read_text(encoding="utf-8")
 
-    assert "Skipped (Excl.)         : 0" in result.stdout.str()
+    assert "Mutation Score: 0.0% (0 of 3 killed; not scored: 1 error)" in result.stdout.str()
     for status, count in data["counts"].items():
         assert (f'<div class="l">{status.lower()}</div>' in html) == (count > 0)
 
