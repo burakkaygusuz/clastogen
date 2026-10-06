@@ -168,8 +168,8 @@ def test_errors_under_mutation():
     html = html_out.read_text(encoding="utf-8")
 
     assert "Skipped (Excl.)         : 0" in result.stdout.str()
-    for status in data["counts"]:
-        assert f'<div class="l">{status.lower()}</div>' in html
+    for status, count in data["counts"].items():
+        assert (f'<div class="l">{status.lower()}</div>' in html) == (count > 0)
 
     statuses = [e["status"] for e in data["executions"]]
     assert {"SURVIVED", "ERROR", "SKIPPED"} <= set(statuses)

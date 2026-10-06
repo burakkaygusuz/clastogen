@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from html import escape
 
 from clastogen.core.sprt import MIN_BASELINE_RATE
@@ -6,11 +7,12 @@ from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
 from clastogen.scoring import MEASURED
 from clastogen.types import MutantStatus
 
+# Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
-    MutantStatus.KILLED: "✓ KILLED",
     MutantStatus.SURVIVED: "✗ SURVIVED",
     MutantStatus.INCONCLUSIVE: "? INCONCLUSIVE",
     MutantStatus.ERROR: "! ERROR",
+    MutantStatus.KILLED: "✓ KILLED",
     MutantStatus.SKIPPED: "↷ SKIPPED",
     MutantStatus.SUPPRESSED: "⊘ SUPPRESSED",
 }
@@ -77,6 +79,7 @@ td.cell { text-align: center; vertical-align: middle; }
   color: #fff; font-size: 13px; font-weight: 700; }
 .none { color: var(--muted); }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
+td.tests code { overflow-wrap: normal; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 650;
   color: #fff; white-space: nowrap; }
 .rate { position: relative; width: 120px; height: 8px; border-radius: 4px; background: var(--line); margin-bottom: 4px; }
@@ -115,6 +118,7 @@ def _cards(summary: MutationSummary) -> str:
         f'<div class="card"><div class="l">{s.value.lower()}</div>'
         f'<div class="n" style="color:{_COLORS[s]}">{n}</div></div>'
         for s, n in summary.counts.items()
+        if n
     ]
     return f'<div class="cards">{"".join(cards)}</div>'
 
@@ -126,11 +130,12 @@ def _donut(summary: MutationSummary) -> str:
     offset = 25.0  # starts the first segment at 12 o'clock
     for s, n in summary.counts.items():
         pct = n / summary.total * 100 if summary.total else 0.0
-        if n:
-            arcs.append(
-                f'<circle cx="21" cy="21" r="15.915" fill="none" stroke-width="6" style="stroke:{_COLORS[s]}" '
-                f'stroke-dasharray="{pct:.3f} {100 - pct:.3f}" stroke-dashoffset="{offset:.3f}"/>'
-            )
+        if not n:
+            continue
+        arcs.append(
+            f'<circle cx="21" cy="21" r="15.915" fill="none" stroke-width="6" style="stroke:{_COLORS[s]}" '
+            f'stroke-dasharray="{pct:.3f} {100 - pct:.3f}" stroke-dashoffset="{offset:.3f}"/>'
+        )
         legend.append(
             f'<li><span class="sw" style="background:{_COLORS[s]}"></span>{s.value.lower()}'
             f" <code>{n} · {pct:.0f}%</code></li>"
@@ -191,13 +196,22 @@ def _matrix(summary: MutationSummary, executions: Sequence[MutantExecution]) -> 
     )
 
 
-def _results_table(summary: MutationSummary) -> str:
+def _test_names(test_ids: Sequence[str]) -> str:
+    return "<br>".join(f'<code title="{escape(t)}">{escape(t.split("::")[-1])}</code>' for t in test_ids)
+
+
+def _results_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> str:
     if not summary.results:
         return '<p class="empty">No mutants were evaluated.</p>'
+    # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
+    passed_in: dict[str, list[str]] = {}
+    for e in executions:
+        if e.status == MutantStatus.SURVIVED:
+            passed_in.setdefault(e.mutant_id, []).append(e.test_id)
     rows = "".join(
         f"<tr><td>{_status_badge(r.status)}</td>"
         f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code></td>"
-        f"<td><code>{escape(r.test_id)}</code></td>"
+        f'<td class="tests">{_test_names(passed_in.get(r.mutant_id, [r.test_id]))}</td>'
         + (
             f'<td class="num">{r.sample_count}</td><td class="num">{r.llr:+.2f}</td></tr>'
             if r.llr is not None
@@ -206,8 +220,9 @@ def _results_table(summary: MutationSummary) -> str:
         for r in summary.results
     )
     return (
-        "<table><thead><tr><th>Status</th><th>Mutant</th><th>Decided by</th><th>Runs</th><th>LLR</th></tr></thead>"
-        f"<tbody>{rows}</tbody></table>"
+        '<div class="scroll"><table><thead><tr><th>Status</th><th>Mutant</th><th>Tests</th><th>Runs</th><th>LLR</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table></div>"
+        '<p class="note">Tests: the test that killed the mutant, or every test that still passed with it.</p>'
     )
 
 
@@ -235,6 +250,8 @@ def render_html(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
     """Renders a self-contained HTML report with inline SVG/CSS charts and no external assets."""
+    order = list(STATUS_LABELS)
+    summary = replace(summary, results=tuple(sorted(summary.results, key=lambda r: order.index(r.status))))
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -245,6 +262,6 @@ def render_html(
         f'<div class="charts"><div class="panel"><h3>Status distribution</h3>{_donut(summary)}</div>'
         f'<div class="panel"><h3>SPRT evidence per mutant</h3>{_llr_chart(summary)}</div></div>'
         f"<h2>Kill matrix</h2>{_matrix(summary, executions)}"
-        f"<h2>Mutants</h2>{_results_table(summary)}"
+        f"<h2>Mutants</h2>{_results_table(summary, executions)}"
         f"<h2>Baselines</h2>{_baselines_table(baselines)}</main></body></html>"
     )
