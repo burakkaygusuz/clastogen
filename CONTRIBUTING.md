@@ -24,6 +24,7 @@ uv run pytest --clastogen -n 2 examples/
 
 - Open pull requests against `main`. Direct pushes are blocked.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) with a scope, e.g. `fix(stats): ...`. Version bumps and GitHub release notes are generated from commit messages.
+- New functionality and bug fixes must include tests that cover them.
 - For larger changes, open an issue first to agree on the approach.
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues as described in [SECURITY.md](SECURITY.md).
