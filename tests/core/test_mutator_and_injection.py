@@ -6,7 +6,7 @@ import pytest
 
 from clastogen import Mutant
 from clastogen.core.injection import override_prompt
-from clastogen.core.mutator import PromptMutator
+from clastogen.core.mutator import PromptMutator, _clip
 
 
 def _register_module(monkeypatch: pytest.MonkeyPatch, name: str, **attrs: object) -> types.ModuleType:
@@ -208,3 +208,9 @@ def test_threshold_mutant_scales_first_number(rule: str, changed: str) -> None:
 def test_rule_without_number_or_with_model_name_has_no_threshold_mutant() -> None:
     mutants = PromptMutator().generate_mutants("You must always answer with gpt-4o style.", max_mutants=10)
     assert "change_threshold" not in {m.operator_name for m in mutants}
+
+
+def test_clip_keeps_a_word_that_ends_at_the_limit() -> None:
+    assert _clip("abc def ghi", 7) == "abc def…"
+    assert _clip("abc def", 7) == "abc def"
+    assert _clip("abcdefghij", 4) == "abcd…"

@@ -21,9 +21,7 @@ def test_secrets():
     result = pytester.runpytest("--clastogen")
     result.assert_outcomes(passed=1)
     stdout = result.stdout.str()
-    assert "Total Unique Mutants    : 1" in stdout
-    assert "Killed (Caught by Suite): 1" in stdout
-    assert "Mutation Score          : 100.0%" in stdout
+    assert "Mutation Score: 100.0% (1 of 1 killed)" in stdout
 
 
 def test_control_arm_rejects_flaky_baseline(pytester: pytest.Pytester) -> None:
@@ -48,7 +46,7 @@ def test_flaky():
     )
     result = pytester.runpytest("--clastogen")
     stdout = result.stdout.str()
-    assert "Flaky baselines (mutation testing rejected)" in stdout
+    assert "Flaky tests (not mutated: baseline pass rate < 80%)" in stdout
     assert "test_audit.py::test_flaky: 7/10 baseline runs passed" in stdout
 
 

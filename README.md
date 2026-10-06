@@ -2,88 +2,160 @@
 
 ![Clastogen logo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/logo.svg)
 
-**Mutation testing and statistical assertion framework for LLMs and AI Agents.**
+**Your LLM evals pass. Do they find a broken prompt?**
 
 [![PyPI](https://img.shields.io/pypi/v/clastogen)](https://pypi.org/project/clastogen/)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/burakkaygusuz/clastogen/badge)](https://scorecard.dev/viewer/?uri=github.com/burakkaygusuz/clastogen)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15258/badge)](https://www.bestpractices.dev/projects/15258)
 
-Clastogen injects controlled faults (deleting constraints, inverting rules, changing numeric limits) into your system prompts to verify whether your test suite actually catches prompt breakages, using Sequential Probability Ratio Tests (SPRT) to stop early and save API budget.
+Clastogen is a pytest plugin. It does mutation testing on the system prompts of LLM apps and AI agents.
+
+Clastogen puts small faults in your prompt. It removes a rule, changes "never" to "always", or multiplies a limit by 10. Then it runs your tests again. If your tests continue to pass, they cannot find that fault. Clastogen uses a Sequential Probability Ratio Test (SPRT). The SPRT stops when the result is clear, so you use fewer API calls.
 
 ---
 
-## Installation
+## Quickstart
 
-```bash
-pip install clastogen
-# or
-uv add --dev clastogen
-```
+1. Install Clastogen:
+
+   ```bash
+   pip install clastogen
+   # or
+   uv add --dev clastogen
+   ```
+
+2. Add the `clastogen` marker to an eval test. Set `target` to the variable that contains your system prompt:
+
+   ```python
+   import pytest
+
+
+   @pytest.mark.clastogen(target="my_app.agent:SYSTEM_PROMPT")
+   def test_agent_behavior():
+       response = call_agent("transfer $500")
+       assert "Verification code" in response
+   ```
+
+3. Run your tests with the `--clastogen` flag:
+
+   ```bash
+   pytest --clastogen
+   ```
+
+After the test run, Clastogen shows a mutation score. A low score tells you that your tests do not find faults in your prompt.
 
 For local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Usage
+## Demo
 
-### 1. Pytest Plugin (Recommended)
+You do not need an API key for this demo. [`examples/mock_agent.py`](examples/mock_agent.py) is a mock banking agent. The agent obeys only the rules that its system prompt contains. [`examples/test_banking_eval.py`](examples/test_banking_eval.py) has two evals:
 
-Mark your LLM evaluation test with `@pytest.mark.clastogen` and point it to the target prompt variable:
+- A strong test. It makes sure that the agent asks for identity verification.
+- A weak test. It only makes sure that the response is not empty and contains the word "refund".
 
-```python
-import pytest
-
-
-@pytest.mark.clastogen(target="my_app.agent:SYSTEM_PROMPT")
-def test_agent_behavior():
-    response = call_agent("transfer $500")
-    assert "Verification code" in response
+```bash
+uv run pytest --clastogen --clastogen-html=reports/report.html examples/test_banking_eval.py
 ```
 
-Run tests with mutation testing enabled:
+Clastogen writes the summary to the terminal:
+
+![Clastogen demo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/demo.gif)
+
+It also writes the same results to `reports/report.html`:
+
+![Clastogen HTML report](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/report.png)
+
+The two tests pass in a usual run. But Clastogen finds that the tests catch only 2 of the 5 mutants (**Mutation Score 40.0%**):
+
+- The strong test kills the two identity mutants. Each mutant needs only 2 runs.
+- The weak test continues to pass when Clastogen removes the refund rule. It also passes when the rule changes to "ALWAYS approve" and when the limit changes from $50 to $500. These three mutants survive. They show a blind spot in your evals.
+
+### How to read the report
+
+- **Statuses:**
+  - `KILLED`: a test failed with the mutant.
+  - `SURVIVED`: the tests continued to pass with the mutant.
+  - `INCONCLUSIVE`: the SPRT got to `max_steps` before a decision.
+  - `ERROR`: the evaluation itself failed. The JSON `error` field gives the cause.
+  - `SKIPPED`: the test called `pytest.skip` during a trial.
+  - `SUPPRESSED`: you suppressed the mutant. See [Suppress mutants](#suppress-mutants).
+- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `SUPPRESSED`.
+- **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
+- **Flags:**
+  - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`.
+  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses) and `baselines`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - `--clastogen-html PATH`: writes the same data to one HTML file.
+
+---
+
+## How Clastogen compares
+
+Most LLM eval tools examine the output of your model. Clastogen examines your tests. Thus, you can use Clastogen together with these tools.
+
+| Tool | The question that it answers |
+| --- | --- |
+| promptfoo | Which prompt and model give better output? Is my app safe from attacks? |
+| DeepEval, Ragas | Is the output relevant, correct and faithful to the context? |
+| Inspect AI | How well does a model or agent do a task? |
+| **Clastogen** | **If my system prompt breaks, do my tests fail?** |
+
+Clastogen runs on each pytest test that has the `clastogen` marker. This includes tests that use metrics from other eval libraries.
+
+---
+
+## Usage
+
+### 1. Pytest plugin
+
+Run your tests with mutation testing:
 
 ```bash
 # Run all tests with mutation testing
 pytest --clastogen
 
-# Target a specific test file
+# Run one test file
 pytest --clastogen tests/test_agent.py
 
-# Verbose output with step-by-step logs
+# Show a log for each step
 pytest --clastogen -s --log-cli-level=INFO
 ```
 
-#### Marker Options
+#### Marker options
 
 ```python
 @pytest.mark.clastogen(
     target="my_app.agent:SYSTEM_PROMPT",  # Required: 'module:VAR' or 'module:Class.ATTR'
-    max_mutants=5,  # Max mutants generated (default: 5)
-    delta=0.30,  # Minimum detectable pass-rate drop (default: 0.30)
-    p0=0.90,  # Known baseline pass rate (default: measured over 10 baseline runs; setting it skips them)
-    max_steps=20,  # Maximum evaluation runs per mutant (default: 20)
+    max_mutants=5,  # Maximum number of mutants (default: 5)
+    delta=0.30,  # Minimum pass-rate decrease to find (default: 0.30)
+    p0=0.90,  # Known baseline pass rate (default: measured in 10 baseline runs; if you set it, Clastogen does not do these runs)
+    max_steps=20,  # Maximum number of runs for each mutant (default: 20)
 )
 ```
 
-#### Prompt must be read at call time
+#### Read the prompt at call time
 
-Clastogen mutates the target by swapping the module (or class) attribute for the duration of each trial, then restoring it. It also swaps module-level aliases that hold the very same string object under the same name (e.g. `from my_app.agent import SYSTEM_PROMPT` at the top of another module). Your code therefore has to read the prompt when it calls the model. Copies made earlier are never updated, so mutants against them always appear `SURVIVED`.
+For each trial, Clastogen replaces the module attribute (or class attribute) with the mutant. After the trial, it puts back the original value. It also replaces module-level aliases that have the same name and refer to the same string object. An example is `from my_app.agent import SYSTEM_PROMPT` at the top of a different module.
 
-Function-scoped fixtures are torn down and rebuilt inside the mutated prompt on every trial, so a fixture such as `bot = {"system": agent.PROMPT}` sees the mutant and is fine. Module- and session-scoped fixtures are built once and keep the original prompt, as do import-time captures; mutants against them also appear `SURVIVED`.
+Thus, your code must read the prompt when it calls the model. Clastogen does not change copies that your code made before the trial. Mutants of these copies always show `SURVIVED`.
 
-Wrong: the prompt is captured once at import time, so the mutated attribute is never read.
+For each trial, Clastogen removes and builds again the function-scoped fixtures. Thus, a fixture such as `bot = {"system": agent.PROMPT}` gets the mutant. Clastogen builds module-scoped and session-scoped fixtures only one time, so they keep the original prompt. Values that your code captures at import time also keep the original prompt. Mutants of these values also show `SURVIVED`.
+
+Incorrect: the code captures the prompt one time at import time. It does not read the changed attribute.
 
 ```python
 # my_app/agent.py
 SYSTEM_PROMPT = "You must never approve refunds over $50."
-CONFIG = {"system": SYSTEM_PROMPT}  # frozen copy; also true for f-strings, default args, clients built at import
+# A copy made at import. F-strings, default args and clients made at import have the same problem.
+CONFIG = {"system": SYSTEM_PROMPT}
 
 
 def ask(question: str) -> str:
     return client.chat(system=CONFIG["system"], user=question)
 ```
 
-Right: the module attribute is looked up on every call (a `from my_app.agent import SYSTEM_PROMPT` inside the function body works too).
+Correct: the code reads the module attribute at each call. A `from my_app.agent import SYSTEM_PROMPT` in the function body also works.
 
 ```python
 # my_app/agent.py
@@ -96,33 +168,38 @@ def ask(question: str) -> str:
 
 #### Parallel runs (pytest-xdist)
 
-`pytest --clastogen -n 4` works: each worker returns its records with the test report and the controller merges them into one summary. Killed-mutant short-circuiting and baseline measurement are per-process, so every worker measures its own baselines and may re-evaluate a mutant already killed on another worker. Parallel runs trade some redundant work for wall-clock time.
+You can use `pytest --clastogen -n 4`. Each worker sends its records with the test report. The controller merges the records into one summary. Each process measures its own baselines and keeps its own list of killed mutants. Thus, a worker can run a mutant again after a different worker killed it. Parallel runs do more work in total, but they take less time.
 
 #### CI
 
-Set the flags once in `pyproject.toml` with pytest's `addopts`:
+Set the flags one time in `pyproject.toml` with the pytest `addopts` option:
 
 ```toml
 [tool.pytest.ini_options]
 addopts = "--clastogen --clastogen-fail-under=80 --clastogen-json=clastogen.json"
 ```
 
-A GitHub Actions job then needs no Clastogen-specific setup:
+A GitHub Actions job does not need special setup for Clastogen:
 
 ```yaml
 - run: pip install clastogen
 - run: pytest --junitxml=junit.xml
 ```
 
-The run fails when the mutation score drops below the threshold. pytest's `--junitxml` also carries each marked test's Clastogen records as a `clastogen_records` property; use `--clastogen-json` when a tool needs to parse them.
+The run fails if the mutation score is less than the threshold. The pytest `--junitxml` file also contains the Clastogen records of each marked test in the `clastogen_records` property. If a tool must parse the records, use `--clastogen-json`.
 
 ---
 
-### 2. Statistical Assertions (Python API)
+### 2. Statistical assertions (Python API)
 
-Assert non-deterministic LLM behavior with statistical guarantees instead of a single flaky `assert`. `assert_pass_rate` samples a zero-argument callable returning `bool` with Wald's SPRT, stopping as soon as the evidence is decisive (at most `max_samples` calls), and raises `AssertionError` when the pass rate is judged below `min_rate` (see [Pass-rate guarantees](#pass-rate-guarantees)). `assert_no_regression` runs a baseline and a candidate callable (paired McNemar test by default, Fisher exact with `paired=False`) and raises only on a statistically significant drop. Both return a result object, and `evaluate_pass_rate` / `evaluate_regression` return it without asserting. `compute_wilson_interval` is exported too.
+One `assert` on LLM output is flaky. Use these functions to get statistical guarantees:
 
-The example below is [`examples/test_stats_usage.py`](examples/test_stats_usage.py); it uses seeded fake evaluators, so it runs with `pytest examples/test_stats_usage.py` and no API key:
+- `assert_pass_rate` calls a callable that has no arguments and returns a `bool`. It uses Wald's SPRT and stops when the evidence is sufficient. It calls the callable `max_samples` times at most. If the pass rate is less than `min_rate`, it raises `AssertionError`. See [Pass-rate guarantees](#pass-rate-guarantees).
+- `assert_no_regression` calls a baseline callable and a candidate callable. By default, it uses a paired McNemar test. With `paired=False`, it uses a Fisher exact test. It raises `AssertionError` only if the decrease is statistically significant.
+- `evaluate_pass_rate` and `evaluate_regression` return the same result objects, but they do not assert.
+- `compute_wilson_interval` is also available.
+
+The example below is [`examples/test_stats_usage.py`](examples/test_stats_usage.py). It uses fake evaluators with a seed. Thus, you can run it with `pytest examples/test_stats_usage.py` and without an API key:
 
 <!-- example: examples/test_stats_usage.py -->
 ```python
@@ -157,50 +234,11 @@ def test_broken_prompt_is_detected_as_regression() -> None:
 
 ---
 
-## Demo
+## Suppress mutants
 
-Zero API keys required. [`examples/mock_agent.py`](examples/mock_agent.py) is a deterministic mock banking agent that obeys exactly the rules its system prompt currently states, and [`examples/test_banking_eval.py`](examples/test_banking_eval.py) holds two evals: a strong identity-verification test and a deliberately weak refund test that only checks the response is non-empty.
+Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `7d1281020f96`, the inverted refund rule in the [Demo](#demo).
 
-```bash
-uv run pytest --clastogen examples/test_banking_eval.py
-```
-
-```text
-======================= Clastogen Mutation Testing Summary =======================
-Total Unique Mutants    : 5
-Killed (Caught by Suite): 2
-Survived (Blind Spots)  : 3
-Inconclusive (Truncated): 0
-Execution Errors (Excl.): 0
-Skipped (Excl.)         : 0
-Suppressed (Excl.)      : 0
-Mutation Score          : 40.0%
---------------------------------------------------------------------------------
-  [2caac4fe522b] ✗ SURVIVED       (6 runs, LLR=-2.38) -> Deleted load-bearing constraint: 'You must never approve refund requests exceeding $...'
-  [45e77dddc073] ✓ KILLED         (2 runs, LLR=+3.05) (killed by test_identity_verification_is_enforced) -> Inverted constraint: 'You must always verify customer identity' -> 'You must NEVER verify customer identity '
-  [55063f25e7dd] ✓ KILLED         (2 runs, LLR=+3.05) (killed by test_identity_verification_is_enforced) -> Deleted load-bearing constraint: 'You must always verify customer identity before pr...'
-  [7d1281020f96] ✗ SURVIVED       (6 runs, LLR=-2.38) -> Inverted constraint: 'You must never approve refund requests e' -> 'You must ALWAYS approve refund requests '
-  [add892bdcea2] ✗ SURVIVED       (6 runs, LLR=-2.38) -> Changed threshold: '50' -> '500' in 'You must never approve refund requests e'
---------------------- Baselines (Laplace p0 used for SPRT) ---------------------
-  examples/test_banking_eval.py::test_identity_verification_is_enforced: 10/10 baseline runs passed, p0=0.917 -> examples.mock_agent:BANKING_SYSTEM_PROMPT
-  examples/test_banking_eval.py::test_refund_handling_superficial_eval: 10/10 baseline runs passed, p0=0.917 -> examples.mock_agent:BANKING_SYSTEM_PROMPT
-================================================================================
-```
-
-Both tests pass in a normal run, yet only 2 of the 5 mutants are caught (**Mutation Score 40.0%**). The strong identity test kills both the deleted and the inverted identity rule (2 runs each), while the weak refund test keeps passing when the refund rule is deleted, inverted to "ALWAYS approve" or its limit raised from $50 to $500, so those three mutants SURVIVE: an eval blind spot you would otherwise ship.
-
-### Reading the report
-
-- **Statuses:** `KILLED` (a test failed under the mutant), `SURVIVED`, `INCONCLUSIVE` (SPRT hit `max_steps` without a verdict), `ERROR` (the evaluation itself broke; the reason is in the JSON `error` field), `SKIPPED`, `SUPPRESSED`.
-- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. `ERROR`, `SKIPPED` and `SUPPRESSED` mutants are not measured and stay out of the score. When several tests evaluate the same mutant, the strongest outcome wins (`KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `SUPPRESSED`).
-- **Baselines:** each marked test is first re-run 9 more times unmutated (10 runs in total). p0 is the Laplace estimate `(s + 1) / (n + 2)`, and a test whose raw pass rate is below 80% is rejected as flaky and not mutated. The terminal "Baselines" section lists them.
-- **Flags:** `--clastogen-fail-under MIN_SCORE` fails the run below that score; `--clastogen-json PATH` writes `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record per mutant), `executions` (every test's record per mutant, the data behind the HTML kill matrix) and `baselines`; `sample_count` and `llr` are `null` for mutants the SPRT never ran (`ERROR`, `SKIPPED`, `SUPPRESSED`). `--clastogen-html PATH` renders the same data as a self-contained HTML report.
-
-## Suppressing Mutants
-
-When a mutant survives because the foundation model inherently obeys the rule from pre-training (an equivalent mutant), suppress it so it does not skew your score. Suppressed mutants are reported as `SUPPRESSED` and excluded from the Mutation Score. Mutant IDs are the 12-character hashes printed in the summary, for example `7d1281020f96` (the inverted refund rule in the [Demo](#demo)).
-
-List them in `.clastogen/suppressions.toml` under your pytest `rootdir`. Every entry needs a `reason`:
+Put the IDs in `.clastogen/suppressions.toml` in your pytest `rootdir`. Each entry must have a `reason`:
 
 ```toml
 [[suppressions]]
@@ -208,15 +246,15 @@ mutant_id = "7d1281020f96"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 
-A malformed file aborts a `--clastogen` run with a usage error; runs without `--clastogen` never read it.
+If the file is not correct, a `--clastogen` run stops with a usage error. Runs without `--clastogen` do not read the file.
 
 ---
 
-## Empirical SPRT Performance & Limits
+## SPRT performance and limits
 
-SPRT dynamically sizes samples using Wald's sequential boundaries. Severe defects halt in as few as 2 calls with a measured 10/10 baseline (3 with an explicit $p_0 = 0.90$), while ambiguous boundaries cap at $N_{\max}$.
+The SPRT uses Wald's sequential boundaries to set the number of samples. For a severe defect with a measured 10/10 baseline, the SPRT stops after only 2 calls. With an explicit $p_0 = 0.90$, it stops after 3 calls. For results near the boundary, the SPRT stops at $N_{\max}$.
 
-Results from Monte Carlo simulation (`PYTHONPATH=src uv run python scripts/simulate_sprt.py`, 10,000 trials per row, seed 42):
+These results come from a Monte Carlo simulation (`PYTHONPATH=src uv run python scripts/simulate_sprt.py`, 10,000 trials for each row, seed 42):
 
 ### Scenario 1: Standard Evaluation ($p_0 = 0.90, p_1 = 0.60, N_{\max} = 20$)
 
@@ -245,7 +283,7 @@ Results from Monte Carlo simulation (`PYTHONPATH=src uv run python scripts/simul
 
 ### Scenario 3: Full Plugin Flow (10-run Laplace baseline, $\delta = 0.30$, $N_{\max} = 20$)
 
-The plugin measures the unmutated test 10 times, estimates $p_0 = (s + 1) / (n + 2)$ (Laplace rule of succession), rejects baselines whose raw pass rate is below 80%, then runs the SPRT on each mutant with $p_1 = p_0 - 0.30$. Rates below are over accepted baselines.
+The plugin runs the test without a mutant 10 times. It calculates $p_0 = (s + 1) / (n + 2)$ (the Laplace rule of succession). If the raw pass rate is less than 80%, the plugin rejects the baseline. Then it runs the SPRT on each mutant with $p_1 = p_0 - 0.30$. The rates below include only the accepted baselines.
 
 | Baseline P | Mutant P | Baseline rejected % | KILLED % | SURVIVED % | INCONCLUSIVE % | ASN (Mean) | Note |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -256,13 +294,19 @@ The plugin measures the unmutated test 10 times, estimates $p_0 = (s + 1) / (n +
 | **0.95** | 0.30 | 0.83% | **99.73%** | 0.13% | 0.14% | **4.52** | Severe defect |
 | **0.95** | 0.00 | 0.83% | **100.00%** | 0.00% | 0.00% | **2.43** | Total failure |
 
-> **Indifference Zone Tradeoff:** In ambiguous zones where the mutant pass rate is close to $(p_0 + p_1) / 2$, sequential tests cannot make a definitive call without infinite samples. Clastogen caps trials at $N_{\max}$ and honestly classifies borderline outcomes as `INCONCLUSIVE` instead of guessing.
+> **Indifference zone:** Sometimes the mutant pass rate is near $(p_0 + p_1) / 2$. In this zone, a sequential test cannot make a decision with a finite number of samples. Clastogen stops at $N_{\max}$ and shows the result as `INCONCLUSIVE`. It does not guess.
 
 ### Pass-rate guarantees
 
-`assert_pass_rate` tests $H_0$: rate $=$ `min_rate` against $H_1$: rate $=$ `min_rate - tolerance`, with both error rates set to `1 - confidence`. A true rate at or above `min_rate` passes with probability of about `confidence`, a true rate at or below `min_rate - tolerance` fails with about the same probability, and rates in between (the indifference zone) can go either way. If `max_samples` runs out before a decision, the sign of the log-likelihood ratio decides; `result.decided` tells you whether the SPRT stopped on its own. Narrow `tolerance` for a sharper verdict at the cost of more samples.
+`assert_pass_rate` tests $H_0$: rate $=$ `min_rate` against $H_1$: rate $=$ `min_rate - tolerance`. Both error rates are `1 - confidence`.
 
-Scenario 4 of the simulation script, defaults (`min_rate=0.90, tolerance=0.20, confidence=0.95, max_samples=50`):
+- If the true rate is `min_rate` or more, the assertion passes with a probability of approximately `confidence`.
+- If the true rate is `min_rate - tolerance` or less, the assertion fails with approximately the same probability.
+- If the true rate is between these two values (the indifference zone), the assertion can pass or fail.
+
+If the SPRT uses all `max_samples` before a decision, the sign of the log-likelihood ratio gives the decision. `result.decided` tells you if the SPRT stopped by itself. A smaller `tolerance` gives a more precise result, but it needs more samples.
+
+Scenario 4 of the simulation script, with the default values (`min_rate=0.90, tolerance=0.20, confidence=0.95, max_samples=50`):
 
 | True P | PASSED % | ASN (Mean) | Note |
 | :--- | :--- | :--- | :--- |
@@ -275,28 +319,28 @@ Scenario 4 of the simulation script, defaults (`min_rate=0.90, tolerance=0.20, c
 
 ---
 
-## Known Limitations (v0.1)
+## Known limitations
 
-1. **Mutation Operator Scope:** Rules are found lexically: a sentence is a candidate only if it contains a keyword such as `must`, `never`, `always`, `avoid`, `only`, `may not` or `require`. Rules phrased without one (for example conditionals like "Escalate to a human if …") are not mutated. Three operators run on each rule: `delete_constraint`, `invert_negation` and `change_threshold` (first number ×10). Semantic LLM-guided mutations, RAG context poisoning, and tool schema mutators are planned for v0.2/v0.3.
-2. **Equivalent Mutants:** A prompt mutation can occasionally result in identical agent behavior (e.g. if the underlying foundation model inherently obeys a safety constraint from pre-training). Clastogen handles this pragmatically via triage suppression (`.clastogen/suppressions.toml`) rather than automated semantic equivalence proofs.
-3. **Effect Size:** The SPRT looks for an absolute drop of `delta` (default 0.30) from a 10-run Laplace baseline, which caps p0 at 11/12 ≈ 0.917. Small regressions such as 0.95 → 0.88 need roughly 60-70 runs per mutant to decide, so with `max_steps=20` they end `INCONCLUSIVE` or `SURVIVED`. Lower `delta` and raise `max_steps` per test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`) when such drops matter, at the matching API cost.
-4. **Baseline Noise:** The first baseline run is the already-passing test and p0 is a point estimate, so for baselines near the 80% acceptance floor the per-mutant false-kill rate exceeds alpha. For an unchanged mutant (`delta=0.30`, `max_steps=20`, among accepted baselines) a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. Raising the 80% floor does not fix it (with a 90% floor, 0.85 still gives 7.0%): stabilize the test or set p0 explicitly.
-5. **Differential Execution:** Clastogen deduplicates already-killed mutants across tests, but does not yet construct a pre-execution static dependency graph.
+1. **Mutation operators:** Clastogen finds rules by their words. A sentence is a candidate only if it contains a keyword such as `must`, `never`, `always`, `avoid`, `only`, `may not` or `require`. Clastogen does not mutate rules without one of these keywords, for example "Escalate to a human if …". Clastogen applies three operators to each rule: `delete_constraint`, `invert_negation` and `change_threshold` (the first number × 10). Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
+2. **Equivalent mutants:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Use suppressions (`.clastogen/suppressions.toml`) for these mutants.
+3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.
+4. **Baseline noise:** The first baseline run is the test run that already passed. Also, p0 is a point estimate. Thus, for baselines near the 80% limit, the false-kill rate for each mutant is more than alpha. These are the rates for an unchanged mutant (`delta=0.30`, `max_steps=20`, accepted baselines only): a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. A higher limit does not fix this problem. With a 90% limit, 0.85 still gives 7.0%. Make the test more stable, or set p0 explicitly.
+5. **Differential execution:** After a test kills a mutant, other tests do not run that mutant again. But Clastogen does not make a static dependency graph before execution.
 
 ---
 
-## Commands Summary
+## Commands summary
 
 | Command | Purpose |
 | --- | --- |
-| `pytest` | Run normal test suite (clastogen dormant) |
-| `pytest --clastogen` | Run test suite with mutation testing & summary score |
-| `PYTHONPATH=src uv run python scripts/simulate_sprt.py` | Run Monte Carlo SPRT power simulation |
-| `uv run ruff check .` | Run static code analysis & linter |
-| `uv run mypy src tests scripts` | Run strict static type checking |
+| `pytest` | Run the usual test suite (Clastogen does not run) |
+| `pytest --clastogen` | Run the test suite with mutation testing and show the score |
+| `PYTHONPATH=src uv run python scripts/simulate_sprt.py` | Run the Monte Carlo simulation of SPRT power |
+| `uv run ruff check .` | Run the linter |
+| `uv run mypy src tests scripts` | Run strict type checks |
 
 ---
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE).
