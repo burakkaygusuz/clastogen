@@ -28,6 +28,7 @@ dependencies = [
 Homepage = "https://github.com/burakkaygusuz/clastogen"
 Repository = "https://github.com/burakkaygusuz/clastogen"
 Issues = "https://github.com/burakkaygusuz/clastogen/issues"
+Changelog = "https://github.com/burakkaygusuz/clastogen/releases"
 
 [build-system]
 requires = ["hatchling"]
@@ -37,7 +38,7 @@ build-backend = "hatchling.build"
 packages = ["src/clastogen"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/README.md", "/LICENSE", "/CHANGELOG.md", "/pyproject.toml"]
+include = ["/src", "/README.md", "/LICENSE", "/pyproject.toml"]
 
 [project.entry-points.pytest11]
 clastogen = "clastogen.plugin"
@@ -114,6 +115,7 @@ source = ["src/clastogen"]
 branch = true
 
 [tool.coverage.report]
+fail_under = 90
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
