@@ -1,4 +1,4 @@
-## What and why
+# What and why
 
 ## Checklist
 
