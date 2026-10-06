@@ -98,7 +98,6 @@ jobs:
       released: ${{ steps.release.outputs.released }}
 
     steps:
-      # The main ruleset only lets this app bypass it; GITHUB_TOKEN cannot be a bypass actor on a personal repo.
       - name: Create release app token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -121,6 +120,7 @@ jobs:
         uses: python-semantic-release/python-semantic-release@b700dbeb1f431a0fcc30a79f3f0869407fe07278 # v10.7.0
         with:
           github_token: ${{ steps.app-token.outputs.token }}
+          changelog: "false"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: steps.release.outputs.released == 'true'
