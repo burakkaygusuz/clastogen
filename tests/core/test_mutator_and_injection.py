@@ -25,6 +25,13 @@ def test_avoid_rule_yields_delete_and_prefer_inversion() -> None:
     assert "Avoid" not in by_op["invert_negation"].mutated_prompt
 
 
+def test_threshold_mutant_survives_default_max_mutants() -> None:
+    prompt = "Never share secrets.\nAlways greet users.\nNever approve refunds over $50."
+    mutants = PromptMutator().generate_mutants(prompt, max_mutants=5)
+
+    assert "change_threshold" in {m.operator_name for m in mutants}
+
+
 def test_override_prompt_context_manager(monkeypatch: pytest.MonkeyPatch) -> None:
     dummy_module = _register_module(monkeypatch, "dummy_agent", SYSTEM_PROMPT="Original safe prompt")
 
@@ -188,6 +195,21 @@ def test_may_not_inverts_to_may() -> None:
     assert [m.mutated_snippet for m in mutants if m.operator_name == "invert_negation"] == [
         "Agents MAY share internal ticket notes."
     ]
+
+
+@pytest.mark.parametrize(
+    ("rule", "softened"),
+    [
+        ("You must never share account numbers.", "You must RARELY share account numbers."),
+        ("Refunds are required for damaged items.", "Refunds are RECOMMENDED for damaged items."),
+        ("Agents mustn't share internal ticket notes.", "Agents SHOULDN'T share internal ticket notes."),
+    ],
+)
+def test_weaken_mutant_turns_a_hard_rule_into_a_suggestion(rule: str, softened: str) -> None:
+    (weakened,) = [
+        m for m in PromptMutator().generate_mutants(rule, max_mutants=10) if m.operator_name == "weaken_modal"
+    ]
+    assert weakened.mutated_prompt == softened
 
 
 @pytest.mark.parametrize(

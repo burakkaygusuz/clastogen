@@ -27,7 +27,7 @@ Sleep 500ms
 Enter
 Sleep 3s
 
-# 2. Clastogen finds that the suite misses 3 of 5 prompt faults, and the build fails.
+# 2. Clastogen finds that the suite misses 2 of 5 prompt faults, and the build fails.
 Type "uv run pytest --clastogen --clastogen-fail-under=80 -q examples/test_banking_eval.py"
 Sleep 500ms
 Enter

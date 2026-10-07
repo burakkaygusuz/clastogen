@@ -44,6 +44,20 @@ class PromptMutator:
         (re.compile(r"\bavoid\b", re.IGNORECASE), "prefer"),
     )
 
+    WEAKENING_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+        (re.compile(r"\bmust not\b", re.IGNORECASE), "should not"),
+        (re.compile(r"\bmustn't\b", re.IGNORECASE), "shouldn't"),
+        (re.compile(r"\bnever\b", re.IGNORECASE), "rarely"),
+        (re.compile(r"\balways\b", re.IGNORECASE), "usually"),
+        (re.compile(r"\bmust\b", re.IGNORECASE), "should"),
+        (re.compile(r"\bshall not\b", re.IGNORECASE), "should not"),
+        (re.compile(r"\bcannot\b", re.IGNORECASE), "should not"),
+        (re.compile(r"\bcan't\b", re.IGNORECASE), "shouldn't"),
+        (re.compile(r"\brequired\b", re.IGNORECASE), "recommended"),
+        (re.compile(r"\brequires\b", re.IGNORECASE), "recommends"),
+        (re.compile(r"\bonly\b", re.IGNORECASE), "preferably"),
+    )
+
     NUMBER_PATTERN = re.compile(r"\b\d+(?:,\d{3})*(?:\.\d+)?\b")
 
     def __init__(self, target_symbol: str = "SYSTEM_PROMPT") -> None:
@@ -84,22 +98,37 @@ class PromptMutator:
             description=f"Deleted constraint: '{_clip(rule, 60)}'",
         )
 
-    def _invert_mutant(self, prompt: str, rule: str) -> Mutant | None:
-        """Flips the first matching negation or obligation keyword in rule; None when none applies."""
-        for pattern, replacement in self.NEGATION_REPLACEMENTS:
+    def _replace_mutant(
+        self,
+        prompt: str,
+        rule: str,
+        replacements: tuple[tuple[re.Pattern[str], str], ...],
+        operator_name: str,
+        verb: str,
+    ) -> Mutant | None:
+        """Applies the first matching replacement in rule; None when none applies."""
+        for pattern, replacement in replacements:
             if pattern.search(rule):
-                inverted = pattern.sub(replacement.upper(), rule, count=1)
-                mutated = prompt.replace(rule, inverted)
+                changed = pattern.sub(replacement.upper(), rule, count=1)
+                mutated = prompt.replace(rule, changed)
                 if mutated != prompt:
                     return Mutant.create(
                         target_symbol=self.target_symbol,
-                        operator_name="invert_negation",
+                        operator_name=operator_name,
                         original_snippet=rule,
-                        mutated_snippet=inverted,
+                        mutated_snippet=changed,
                         mutated_prompt=mutated,
-                        description=f"Inverted constraint: '{_clip(rule, 45)}' -> '{_clip(inverted, 45)}'",
+                        description=f"{verb} constraint: '{_clip(rule, 45)}' -> '{_clip(changed, 45)}'",
                     )
         return None
+
+    def _invert_mutant(self, prompt: str, rule: str) -> Mutant | None:
+        """Flips the first matching negation or obligation keyword in rule; None when none applies."""
+        return self._replace_mutant(prompt, rule, self.NEGATION_REPLACEMENTS, "invert_negation", "Inverted")
+
+    def _weaken_mutant(self, prompt: str, rule: str) -> Mutant | None:
+        """Softens the first matching hard keyword in rule into a suggestion; None when none applies."""
+        return self._replace_mutant(prompt, rule, self.WEAKENING_REPLACEMENTS, "weaken_modal", "Weakened")
 
     def _threshold_mutant(self, prompt: str, rule: str) -> Mutant | None:
         """Multiplies the first number in rule by 10 (a $50 limit becomes $500); None when rule has no number."""
@@ -123,7 +152,7 @@ class PromptMutator:
         )
 
     def generate_mutants(self, prompt: str, max_mutants: int) -> Sequence[Mutant]:
-        """Generates a bounded sequence of mutants (constraint deletions, negation inversions, threshold changes)."""
+        """Generates a bounded sequence of mutants (constraint deletions, negation inversions, modal weakenings, threshold changes)."""
         if not isinstance(prompt, str):
             raise TypeError(f"prompt must be a string, got {type(prompt).__name__}")
         if max_mutants < 1:
@@ -140,10 +169,12 @@ class PromptMutator:
         else:
             selected_rules = candidates
 
-        operators = (self._delete_mutant, self._invert_mutant, self._threshold_mutant)
-        per_rule = [
-            [m for op in operators[i % 3 :] + operators[: i % 3] if (m := op(prompt, rule))]
-            for i, rule in enumerate(selected_rules)
-        ]
+        # Threshold first for every rule: it is the most valuable operator and returns None without a number.
+        rotating = (self._delete_mutant, self._invert_mutant, self._weaken_mutant)
+        per_rule = []
+        for i, rule in enumerate(selected_rules):
+            offset = i % len(rotating)
+            operators = (self._threshold_mutant, *rotating[offset:], *rotating[:offset])
+            per_rule.append([m for op in operators if (m := op(prompt, rule))])
         mutants = [m for group in zip_longest(*per_rule) for m in group if m]
         return mutants[:max_mutants]
