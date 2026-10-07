@@ -430,8 +430,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         # pytest prints shouldfail in red just above its final "N passed" line; keep a reason it already set (-x).
         detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
         message = f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
-        prev = session.shouldfail
-        session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message
+    elif all_errors and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
+        message = f"Clastogen: all {summary.total} mutants errored"
+    else:
+        return
+    prev = session.shouldfail
+    session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message
 
 
 _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
