@@ -24,7 +24,7 @@ import pytest, agent
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_refunds():
-    assert "never approve refunds" in agent.PROMPT
+    assert "never approve refunds over $50." in agent.PROMPT
 """,
         test_identity="""
 import pytest, agent

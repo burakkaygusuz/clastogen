@@ -109,7 +109,7 @@ import pytest, agent
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_uses_tmp(tmp_path):
-    assert "never approve refunds" in agent.PROMPT
+    assert "never approve refunds over $50." in agent.PROMPT
 """,
     )
     json_out = pytester.path / "out.json"
@@ -163,7 +163,7 @@ def bot():
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_captured(bot):
-    assert "never approve refunds" in bot["system"]
+    assert "never approve refunds over $50." in bot["system"]
     assert "always verify identity" in bot["system"]
 """,
     )

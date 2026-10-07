@@ -10,7 +10,7 @@
 
 Clastogen is a pytest plugin. It does mutation testing on the system prompts of LLM apps and AI agents.
 
-Clastogen puts small faults in your prompt. It removes a rule, changes "never" to "always", or multiplies a limit by 10. Then it runs your tests again. If your tests continue to pass, they cannot find that fault. Clastogen uses a Sequential Probability Ratio Test (SPRT). The SPRT stops when the result is clear, so you use fewer API calls.
+Clastogen puts small faults in your prompt. It removes a rule, changes "never" to "always", changes "must" to "should", or multiplies a limit by 10. Then it runs your tests again. If your tests continue to pass, they cannot find that fault. Clastogen uses a Sequential Probability Ratio Test (SPRT). The SPRT stops when the result is clear, so you use fewer API calls.
 
 ---
 
@@ -67,10 +67,10 @@ It also writes the same results to `reports/report.html`:
 
 ![Clastogen HTML report](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/report.png)
 
-The two tests pass in a usual run. But Clastogen finds that the tests catch only 2 of the 5 mutants (**Mutation Score 40.0%**):
+The two tests pass in a usual run. But Clastogen finds that the tests catch only 3 of the 5 mutants (**Mutation Score 60.0%**):
 
-- The strong test kills the two identity mutants. Each mutant needs only 2 runs.
-- The weak test continues to pass when Clastogen removes the refund rule. It also passes when the rule changes to "ALWAYS approve" and when the limit changes from $50 to $500. These three mutants survive. They show a blind spot in your evals.
+- The strong test kills the three identity mutants. Each mutant needs only 2 runs.
+- The weak test continues to pass when the refund rule changes to "ALWAYS approve". It also passes when the refund limit changes from $50 to $500. These two mutants survive. They show a blind spot in your evals.
 
 ### How to read the report
 
@@ -321,7 +321,7 @@ Scenario 4 of the simulation script, with the default values (`min_rate=0.90, to
 
 ## Known limitations
 
-1. **Mutation operators:** Clastogen finds rules by their words. A sentence is a candidate only if it contains a keyword such as `must`, `never`, `always`, `avoid`, `only`, `may not` or `require`. Clastogen does not mutate rules without one of these keywords, for example "Escalate to a human if …". Clastogen applies three operators to each rule: `delete_constraint`, `invert_negation` and `change_threshold` (the first number × 10). Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
+1. **Mutation operators:** Clastogen finds rules by their words. A sentence is a candidate only if it contains a keyword such as `must`, `never`, `always`, `avoid`, `only`, `may not` or `require`. Clastogen does not mutate rules without one of these keywords, for example "Escalate to a human if …". Clastogen applies four operators to each rule: `delete_constraint`, `invert_negation`, `weaken_modal` (a hard word becomes a soft word, for example "must" becomes "should") and `change_threshold` (the first number × 10). Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
 2. **Equivalent mutants:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Use suppressions (`.clastogen/suppressions.toml`) for these mutants.
 3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.
 4. **Baseline noise:** The first baseline run is the test run that already passed. Also, p0 is a point estimate. Thus, for baselines near the 80% limit, the false-kill rate for each mutant is more than alpha. These are the rates for an unchanged mutant (`delta=0.30`, `max_steps=20`, accepted baselines only): a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. A higher limit does not fix this problem. With a 90% limit, 0.85 still gives 7.0%. Make the test more stable, or set p0 explicitly.

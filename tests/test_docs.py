@@ -40,9 +40,9 @@ def test_demo_reports_documented_score(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
-    assert data["counts"]["KILLED"] == 2
-    assert data["counts"]["SURVIVED"] == 3
-    assert data["mutation_score"] == 40.0
+    assert data["counts"]["KILLED"] == 3
+    assert data["counts"]["SURVIVED"] == 2
+    assert data["mutation_score"] == 60.0
 
     by_id = {r["mutant_id"]: r for r in data["results"]}
     inverted_identity = next(r for r in by_id.values() if "NEVER verify customer identity" in r["description"])

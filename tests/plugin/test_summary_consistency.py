@@ -22,7 +22,7 @@ def test_unrelated():
 _STRONG = """
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
-    assert "never approve refunds" in agent.ask()
+    assert "never approve refunds over $50." in agent.ask()
     assert "verify identity" in agent.ask()
 """
 
@@ -74,7 +74,7 @@ def test_weak():
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
-    assert "never approve refunds" in agent.ask()
+    assert "never approve refunds over $50." in agent.ask()
     assert "verify identity" in agent.ask()
 """,
     )
@@ -124,7 +124,7 @@ import pytest, agent
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
-    assert "never approve refunds" in agent.ask()
+    assert "never approve refunds over $50." in agent.ask()
     assert "verify identity" in agent.ask()
 """,
     )
@@ -154,12 +154,12 @@ import pytest, agent
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1)
 def test_skips_under_mutation():
-    if "never approve" not in agent.ask():
+    if "$500" in agent.ask():
         pytest.skip("skipped during mutation")
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=4)
 def test_errors_under_mutation():
-    if "verify identity" not in agent.ask():
+    if "usually verify" in agent.ask():
         raise KeyError("boom")
 """,
     )

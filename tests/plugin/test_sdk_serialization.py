@@ -16,7 +16,7 @@ def ask() -> dict[str, bool]:
     payload = json.loads(json.dumps({"messages": [{"role": "system", "content": PROMPT}]}))
     system = payload["messages"][0]["content"]
     return {
-        "refuses_refunds": "never approve refunds" in system,
+        "refuses_refunds": "never approve refunds over $50." in system,
         "verifies_identity": "always verify identity" in system,
     }
 '''
