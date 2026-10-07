@@ -114,6 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     outputs:
       released: ${{ steps.release.outputs.released }}
 
@@ -155,9 +156,10 @@ jobs:
           version: "0.12.23"
           enable-cache: false
 
-      - name: Attach CycloneDX SBOM to the GitHub release
+      - name: Attach signed CycloneDX SBOM to the GitHub release
         if: steps.release.outputs.released == 'true'
         # The tag and release already exist here; a failed upload must not block the PyPI publish.
+        # Upload only after signing: an unsigned release asset scores 0 on Scorecard's Signed-Releases check.
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -165,7 +167,8 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           uv export --format cyclonedx1.5 --no-dev --locked -o "clastogen-$VERSION.cdx.json"
-          gh release upload "$TAG" "clastogen-$VERSION.cdx.json"
+          uvx sigstore@4.5.0 sign "clastogen-$VERSION.cdx.json"
+          gh release upload "$TAG" "clastogen-$VERSION.cdx.json" "clastogen-$VERSION.cdx.json.sigstore.json"
 
   publish:
     name: publish to PyPI
