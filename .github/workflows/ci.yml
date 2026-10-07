@@ -29,14 +29,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          enable-cache: true
           version: "0.12.23"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev --locked
+        run: uv sync --locked
 
       - name: Run linter (Ruff)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
@@ -56,11 +53,13 @@ jobs:
       - name: Run examples (demo and stats usage) under Clastogen with pytest-xdist
         run: uv run pytest --clastogen -n 2 examples/
 
-      - name: Build and verify wheel distribution
+      - name: Build and verify distributions
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: |
           uv build
-          uv run --isolated --no-project --with dist/*.whl python -c "import clastogen, clastogen.plugin; assert 'site-packages' in clastogen.__file__, clastogen.__file__; print(f'Imported clastogen {clastogen.__version__} from the wheel')"
+          for dist in dist/*.whl dist/*.tar.gz; do
+            uv run --isolated --no-project --with "$dist" python -c "import clastogen, clastogen.plugin; assert 'site-packages' in clastogen.__file__, clastogen.__file__; print(f'Imported clastogen {clastogen.__version__} from $dist')"
+          done
 
   lowest-deps:
     name: test (lowest direct dependencies)
@@ -72,20 +71,41 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          enable-cache: true
           version: "0.12.23"
-
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+          python-version: "3.11"
 
       - name: Install lowest direct dependencies
-        run: uv sync --dev --python 3.11 --resolution lowest-direct
+        run: uv sync --resolution lowest-direct
 
       - name: Run test suite
-        run: uv run --no-sync --python 3.11 pytest
+        run: uv run --no-sync pytest
 
       - name: Run examples under Clastogen with pytest-xdist
-        run: uv run --no-sync --python 3.11 pytest --clastogen -n 2 examples/
+        run: uv run --no-sync pytest --clastogen -n 2 examples/
+
+  pytest-pre:
+    name: test (pytest pre-release)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+
+      - name: Install dependencies with latest pytest pre-release
+        run: |
+          uv sync --locked
+          uv pip install --upgrade --prerelease allow pytest
+
+      - name: Run test suite
+        run: uv run --no-sync pytest
+
+      - name: Run examples under Clastogen with pytest-xdist
+        run: uv run --no-sync pytest --clastogen -n 2 examples/
 
   release:
     name: release
@@ -127,6 +147,25 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      - name: Install uv
+        if: steps.release.outputs.released == 'true'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Attach CycloneDX SBOM to the GitHub release
+        if: steps.release.outputs.released == 'true'
+        # The tag and release already exist here; a failed upload must not block the PyPI publish.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          uv export --format cyclonedx1.5 --no-dev --locked -o "clastogen-$VERSION.cdx.json"
+          gh release upload "$TAG" "clastogen-$VERSION.cdx.json"
 
   publish:
     name: publish to PyPI
