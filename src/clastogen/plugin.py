@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
 SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
+_BASELINE_SKIPPED = "test skipped during baseline"
 
 
 def load_suppressions(root_path: Path) -> set[str]:
@@ -226,7 +227,7 @@ def _measure_baseline(item: pytest.Item, params: ClastogenParams) -> tuple[Basel
         try:
             outcomes.append(_run_trial(item))
         except TrialSkipped:
-            error = "test skipped during baseline"
+            error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
             logger.error("Baseline trial failed for test '%s': %s", item.nodeid, exc, exc_info=exc)
@@ -334,6 +335,11 @@ def _run_mutation(
     if params.p0 is None:
         baseline, config = _measure_baseline(item, params)
         baselines.append(baseline)
+        # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
+        if baseline.error == _BASELINE_SKIPPED:
+            results += [_execution(item, m, MutantStatus.SKIPPED) for m in pending]
+        elif baseline.error:
+            results += [_execution(item, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending]
         if config is None:
             return baselines, results
     else:
@@ -422,16 +428,18 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         _write_report(md_path, render_markdown(summary, state.results, state.baselines))
 
     fail_under = session.config.getoption("--clastogen-fail-under", None)
-    all_errors = summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total
+    # Errored mutants drop out of the score, so they fail the run instead of inflating it.
+    mutant_errors = summary.counts[MutantStatus.ERROR]
+    errored = mutant_errors > 0
     fail_under_failed = fail_under is not None and _fail_under_failed(summary, float(fail_under))
-    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or all_errors):
+    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or errored):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if fail_under_failed and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
         # pytest prints shouldfail in red just above its final "N passed" line; keep a reason it already set (-x).
         detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
         message = f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
-    elif all_errors and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
-        message = f"Clastogen: all {summary.total} mutants errored"
+    elif errored and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
+        message = f"Clastogen: {mutant_errors} mutant error(s)"
     else:
         return
     prev = session.shouldfail
@@ -451,14 +459,14 @@ _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
 def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord], verbose: bool) -> None:
     """Writes one line for all stable baselines (one per test with -v) after the full list of flaky ones."""
     stable = [b for b in baselines if b.stable]
-    flaky = [b for b in baselines if not b.stable]
+    # Errored baselines are reported on their mutants' ERROR and SKIPPED rows.
+    flaky = [b for b in baselines if not b.stable and not b.error]
     if flaky:
         title = f"Flaky tests (not mutated: baseline pass rate < {MIN_BASELINE_RATE:.0%})"
         terminalreporter.write_sep("-", title, yellow=True)
         for b in flaky:
-            reason = f" [{b.error}]" if b.error else ""
             terminalreporter.write_line(
-                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed{reason} -> {b.target}", yellow=True
+                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed -> {b.target}", yellow=True
             )
     else:
         terminalreporter.write_sep("-")

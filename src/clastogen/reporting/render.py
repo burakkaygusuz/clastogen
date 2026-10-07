@@ -178,8 +178,14 @@ def _results_table(summary: MutationSummary, executions: Sequence[MutantExecutio
 def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
     if not baselines:
         return '<p class="empty">No baselines were recorded.</p>'
+
+    def badge(b: BaselineRecord) -> str:
+        if b.error:
+            return _badge("ERROR", "var(--error)")
+        return _badge("STABLE", "var(--killed)") if b.stable else _badge("FLAKY", "var(--survived)")
+
     rows = "".join(
-        f"<tr><td>{_badge('STABLE', 'var(--killed)') if b.stable else _badge('FLAKY', 'var(--survived)')}</td>"
+        f"<tr><td>{badge(b)}</td>"
         f"<td><code>{escape(b.test_id)}</code>{_error(b.error)}</td><td><code>{escape(b.target)}</code></td>"
         f'<td class="num"><div class="rate"><span style="width:{b.successes / b.runs * 100 if b.runs else 0:.1f}%;'
         f'background:{"var(--killed)" if b.stable else "var(--survived)"}"></span>'
@@ -227,12 +233,13 @@ def render_markdown(
 ) -> str:
     """Renders a compact GitHub-flavored Markdown summary for job summaries and pull request comments."""
     lines = ["## Clastogen mutation testing", "", f"**{score_line(summary)}**"]
-    if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable]:
+    if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
     if summary.results:
         passed_in = _survivor_tests(executions)
         lines += ["", "| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
         for r in sorted(summary.results, key=lambda r: _STATUS_ORDER[r.status]):
             tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
-            lines.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(r.description)} | {_code(tests)} |")
+            change = f"{r.description} [{r.error}]" if r.error else r.description
+            lines.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(change)} | {_code(tests)} |")
     return "\n".join(lines) + "\n"

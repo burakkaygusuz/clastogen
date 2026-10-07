@@ -147,7 +147,8 @@ def test_uses_resource(resource):
     assert baseline["stable"] is False
     assert baseline["runs"] == 1
     assert "fixture reset failed: ValueError: boom" in baseline["error"]
-    assert data["results"] == []
+    assert {r["status"] for r in data["results"]} == {"ERROR"}
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
     assert "fixture reset failed: ValueError: boom" in result.stdout.str()
 
 
