@@ -182,3 +182,22 @@ def test_errors_under_mutation():
     unmeasured = [e for e in data["executions"] + data["results"] if e["status"] in ("ERROR", "SKIPPED")]
     assert unmeasured
     assert all(e["sample_count"] is None and e["llr"] is None for e in unmeasured)
+
+
+def test_all_errors_fail_session_with_reason(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_err="""
+import pytest, agent
+
+ORIGINAL = agent.PROMPT
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
+def test_errors_under_mutation():
+    if agent.PROMPT != ORIGINAL:
+        raise KeyError("boom")
+""",
+    )
+    result = pytester.runpytest("--clastogen")
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    result.stdout.fnmatch_lines(["*Clastogen: all 2 mutants errored*"])
