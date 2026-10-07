@@ -1,10 +1,11 @@
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 from html import escape
 
 from clastogen.core.sprt import MIN_BASELINE_RATE
 from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
-from clastogen.scoring import MEASURED
+from clastogen.scoring import MEASURED, score_line
 from clastogen.types import MutantStatus
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
@@ -196,18 +197,26 @@ def _matrix(summary: MutationSummary, executions: Sequence[MutantExecution]) -> 
     )
 
 
+_STATUS_ORDER = {status: i for i, status in enumerate(STATUS_LABELS)}
+
+
 def _test_names(test_ids: Sequence[str]) -> str:
     return "<br>".join(f'<code title="{escape(t)}">{escape(t.split("::")[-1])}</code>' for t in test_ids)
+
+
+def _survivor_tests(executions: Sequence[MutantExecution]) -> dict[str, list[str]]:
+    passed_in: dict[str, list[str]] = {}
+    for e in executions:
+        if e.status == MutantStatus.SURVIVED:
+            passed_in.setdefault(e.mutant_id, []).append(e.test_id)
+    return passed_in
 
 
 def _results_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> str:
     if not summary.results:
         return '<p class="empty">No mutants were evaluated.</p>'
     # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
-    passed_in: dict[str, list[str]] = {}
-    for e in executions:
-        if e.status == MutantStatus.SURVIVED:
-            passed_in.setdefault(e.mutant_id, []).append(e.test_id)
+    passed_in = _survivor_tests(executions)
     rows = "".join(
         f"<tr><td>{_status_badge(r.status)}</td>"
         f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code></td>"
@@ -250,8 +259,7 @@ def render_html(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
     """Renders a self-contained HTML report with inline SVG/CSS charts and no external assets."""
-    order = list(STATUS_LABELS)
-    summary = replace(summary, results=tuple(sorted(summary.results, key=lambda r: order.index(r.status))))
+    summary = replace(summary, results=tuple(sorted(summary.results, key=lambda r: _STATUS_ORDER[r.status])))
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -265,3 +273,26 @@ def render_html(
         f"<h2>Mutants</h2>{_results_table(summary, executions)}"
         f"<h2>Baselines</h2>{_baselines_table(baselines)}</main></body></html>"
     )
+
+
+def _code(text: str) -> str:
+    # Prompt text is untrusted: a code span renders it literally, with no HTML, links or @mentions in a PR comment.
+    text = " ".join(text.split()).replace("|", "\\|")
+    fence = "`" * (max(map(len, re.findall("`+", text)), default=0) + 1)
+    return f"{fence} {text} {fence}"
+
+
+def render_markdown(
+    summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
+) -> str:
+    """Renders a compact GitHub-flavored Markdown summary for job summaries and pull request comments."""
+    lines = ["## Clastogen mutation testing", "", f"**{score_line(summary)}**"]
+    if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable]:
+        lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
+    if summary.results:
+        passed_in = _survivor_tests(executions)
+        lines += ["", "| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
+        for r in sorted(summary.results, key=lambda r: _STATUS_ORDER[r.status]):
+            tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
+            lines.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(r.description)} | {_code(tests)} |")
+    return "\n".join(lines) + "\n"
