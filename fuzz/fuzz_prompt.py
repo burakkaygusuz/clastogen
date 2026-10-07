@@ -7,7 +7,7 @@ uv run --with atheris==3.1.0 python fuzz/fuzz_prompt.py -max_total_time=60
 import re
 import sys
 
-import atheris
+import atheris  # pyrefly: ignore[missing-source-for-stubs]
 
 with atheris.instrument_imports():
     from clastogen.mutation.mutator import PromptMutator
