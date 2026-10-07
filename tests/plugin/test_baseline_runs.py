@@ -48,23 +48,58 @@ def test_breaks():
 
 
 @pytest.mark.parametrize(
-    ("action", "error"),
+    ("action", "error", "status", "mutant_error"),
     [
-        ('raise RuntimeError("boom")', "unexpected execution error: RuntimeError: boom"),
-        ('pytest.skip("flaky dependency")', "test skipped during baseline"),
+        (
+            'raise RuntimeError("boom")',
+            "unexpected execution error: RuntimeError: boom",
+            "ERROR",
+            "baseline: unexpected execution error: RuntimeError: boom",
+        ),
+        ('pytest.skip("flaky dependency")', "test skipped during baseline", "SKIPPED", None),
     ],
 )
-def test_broken_baseline_is_rejected_with_reason(pytester: pytest.Pytester, action: str, error: str) -> None:
+def test_broken_baseline_is_rejected_with_reason(
+    pytester: pytest.Pytester, action: str, error: str, status: str, mutant_error: str | None
+) -> None:
     pytester.makepyfile(agent=AGENT, test_breaks=_BREAKS_ON_RERUN.format(action=action))
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
 
     result.assert_outcomes(passed=1)
+    # The baseline error lands on the unmeasured mutants: ERROR fails the run, SKIPPED does not.
+    assert result.ret == (pytest.ExitCode.TESTS_FAILED if mutant_error else pytest.ExitCode.OK)
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (baseline,) = data["baselines"]
     assert (baseline["stable"], baseline["runs"], baseline["error"]) == (False, 1, error)
-    assert data["results"] == []
-    assert error in result.stdout.str()
+    (mutant,) = data["results"]
+    assert (mutant["status"], mutant["error"]) == (status, mutant_error)
+    assert "Flaky tests" not in result.stdout.str()
+    if mutant_error:
+        assert mutant_error in result.stdout.str()
+
+
+@pytest.mark.parametrize("files", [("test_a.py", "test_b.py"), ("test_b.py", "test_a.py")])
+def test_baseline_error_outcome_does_not_depend_on_test_order(
+    pytester: pytest.Pytester, files: tuple[str, ...]
+) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_a="""
+import pytest, agent
+ORIGINAL = agent.PROMPT
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1)
+def test_kills():
+    assert agent.PROMPT == ORIGINAL
+""",
+        test_b=_BREAKS_ON_RERUN.format(action='raise RuntimeError("boom")'),
+    )
+    result = pytester.runpytest("--clastogen", *files)
+
+    # test_a kills every mutant whose baseline broke in test_b, whichever runs first.
+    assert result.ret == pytest.ExitCode.OK
+    result.stdout.fnmatch_lines(["*Mutation Score: 100.0% (1 of 1 killed)*"])
 
 
 def test_pytest_exit_during_baseline_stops_the_session(pytester: pytest.Pytester) -> None:

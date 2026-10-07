@@ -80,10 +80,11 @@ Already use DeepEval? [`examples/test_deepeval_eval.py`](examples/test_deepeval_
   - `KILLED`: a test failed with the mutant.
   - `SURVIVED`: the tests continued to pass with the mutant.
   - `INCONCLUSIVE`: the SPRT got to `max_steps` before a decision.
-  - `ERROR`: the evaluation itself failed. The JSON `error` field gives the cause.
+  - `ERROR`: the evaluation itself failed. The JSON `error` field gives the cause. One exception in any trial stops the SPRT for that mutant, so configure retries in your LLM client for transient API errors.
   - `SKIPPED`: the test called `pytest.skip` during a trial.
   - `SUPPRESSED`: you suppressed the mutant. See [Suppress mutants](#suppress-mutants).
 - **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `SUPPRESSED`.
+- **Errors fail the run:** A mutant with the result `ERROR` is not in the score. Thus any `ERROR` mutant makes the run fail, also without `--clastogen-fail-under`. A baseline error gives `ERROR` to the mutants of its test, and a `pytest.skip` during the baseline gives `SKIPPED`. If a different test kills such a mutant, the result is `KILLED`.
 - **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
 - **Flags:**
   - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`.
