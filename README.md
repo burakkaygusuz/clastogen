@@ -131,6 +131,8 @@ pytest --clastogen -s --log-cli-level=INFO
     delta=0.30,  # Minimum pass-rate decrease to find (default: 0.30)
     p0=0.90,  # Known baseline pass rate (default: measured in 10 baseline runs; if you set it, Clastogen does not do these runs)
     max_steps=20,  # Maximum number of runs for each mutant (default: 20)
+    alpha=0.05,  # SPRT type I error rate: chance to kill an unchanged mutant (default: 0.05)
+    beta=0.10,  # SPRT type II error rate: chance to miss a real decrease (default: 0.10)
 )
 ```
 

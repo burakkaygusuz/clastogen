@@ -103,18 +103,22 @@ class ClastogenParams:
     delta: float = 0.30
     p0: float | None = None
     max_steps: int = 20
+    alpha: float = 0.05
+    beta: float = 0.10
 
     def __post_init__(self) -> None:
         for name in ("max_mutants", "max_steps"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be an integer >= 1, got {value!r}")
-        for name in ("delta", "p0"):
+        for name in ("delta", "p0", "alpha", "beta"):
             value = getattr(self, name)
             if name == "p0" and value is None:
                 continue
             if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 < value < 1.0:
                 raise ValueError(f"{name} must be a number in (0, 1), got {value!r}")
+        if self.alpha + self.beta >= 1.0:
+            raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
 
 
 @dataclass(frozen=True)
@@ -132,6 +136,8 @@ class SPRTConfig:
             raise ValueError(f"alpha must be in (0, 1), got {self.alpha}")
         if not (0.0 < self.beta < 1.0):
             raise ValueError(f"beta must be in (0, 1), got {self.beta}")
+        if self.alpha + self.beta >= 1.0:
+            raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
         if not (0.0 < self.p1 < self.p0 < 1.0):
             raise ValueError(f"Requirement 0 < p1 < p0 < 1 violated: p0={self.p0}, p1={self.p1}")
         if isinstance(self.max_steps, bool) or not isinstance(self.max_steps, int) or self.max_steps < 1:

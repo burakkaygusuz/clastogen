@@ -177,7 +177,7 @@ class _RecordCollector:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20): Run Clastogen on target prompt.",
+        "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10): Run Clastogen on target prompt.",
     )
     suppressed = load_suppressions(config.rootpath) if config.getoption("--clastogen") else set()
     state = ClastogenPluginState(suppressed_mutants=suppressed)
@@ -225,7 +225,13 @@ def _measure_baseline(item: pytest.Item, params: ClastogenParams) -> tuple[Basel
             error = str(exc)
             break
 
-    config = None if error else config_from_baseline(outcomes, delta=params.delta, max_steps=params.max_steps)
+    config = (
+        None
+        if error
+        else config_from_baseline(
+            outcomes, delta=params.delta, max_steps=params.max_steps, alpha=params.alpha, beta=params.beta
+        )
+    )
     if config is None:
         logger.warning(
             "Baseline rejected (%d/%d passed, minimum %.0f%%) for test '%s' targeting '%s'%s.",
@@ -323,7 +329,9 @@ def _run_mutation(
         if config is None:
             return baselines, results
     else:
-        config = SPRTConfig.from_absolute_drop(p0=params.p0, delta=params.delta, max_steps=params.max_steps)
+        config = SPRTConfig.from_absolute_drop(
+            p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
+        )
 
     sprt = SPRT(config)
     for mutant in pending:
