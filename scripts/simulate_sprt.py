@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import random
+import random  # Seeded PRNG: the simulations must be reproducible, not unpredictable.
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,7 +56,7 @@ def run_simulation(
     sprt = SPRT(config)
 
     def evaluator() -> bool:
-        return rng.random() < true_p
+        return rng.random() < true_p  # NOSONAR
 
     results = [sprt.run_evaluator(evaluator) for _ in range(trials)]
     return _tally([r.decision for r in results], [r.sample_count for r in results], true_p, 0.0)
@@ -84,10 +84,10 @@ def run_full_flow_simulation(
     steps: list[int] = []
 
     def mutant_evaluator() -> bool:
-        return rng.random() < mutant_p
+        return rng.random() < mutant_p  # NOSONAR
 
     for _ in range(trials):
-        baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]
+        baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
         config = config_from_baseline(baseline, delta=delta, max_steps=max_steps)
         if config is None:
             continue
@@ -104,7 +104,7 @@ def run_full_flow_simulation(
 def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42) -> tuple[float, float]:
     """Returns (pass %, mean samples) of evaluate_pass_rate with its default arguments."""
     rng = random.Random(seed)
-    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]
+    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]  # NOSONAR
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 
