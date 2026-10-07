@@ -43,8 +43,8 @@ def load_suppressions(root_path: Path) -> set[str]:
         return set()
     try:
         raw_data = tomllib.loads(candidate.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise pytest.UsageError(f"Invalid TOML in '{candidate}': {exc}") from exc
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise pytest.UsageError(f"Cannot read '{candidate}': {exc}") from exc
     items = raw_data.get("suppressions")
     if not isinstance(items, list):
         raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected [[suppressions]] tables.")

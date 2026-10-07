@@ -38,12 +38,19 @@ def test_load_suppressions_toml_format(tmp_path: Path) -> None:
         ("suppressions = ['abcdefabcdef']\n", "must be a table"),
         ("[[suppressions]]\nreason = 'x'\n", "missing 'mutant_id'"),
         ("[[suppressions]]\nmutant_id = 'abcdefabcdef'\n", "non-empty 'reason'"),
-        ("[[suppressions]\n", "Invalid TOML"),
+        ("[[suppressions]\n", "Cannot read"),
     ],
 )
 def test_load_suppressions_rejects_malformed_files(tmp_path: Path, text: str, match: str) -> None:
     _write_suppressions(tmp_path, text)
     with pytest.raises(pytest.UsageError, match=match):
+        load_suppressions(tmp_path)
+
+
+def test_load_suppressions_rejects_undecodable_file(tmp_path: Path) -> None:
+    _write_suppressions(tmp_path, "")
+    (tmp_path / ".clastogen" / "suppressions.toml").write_bytes(b"\xff")
+    with pytest.raises(pytest.UsageError, match="Cannot read"):
         load_suppressions(tmp_path)
 
 
