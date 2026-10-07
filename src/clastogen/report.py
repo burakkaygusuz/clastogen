@@ -2,6 +2,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import replace
 from html import escape
+from importlib.resources import files
 
 from clastogen.core.sprt import MIN_BASELINE_RATE
 from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
@@ -27,68 +28,7 @@ _COLORS = {
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
 
-_CSS = """
-:root {
-  --bg: #f6f7f9; --card: #fff; --fg: #1d2330; --muted: #677189; --line: #e3e6ec;
-  --killed: #1f9d55; --survived: #d64545; --inconclusive: #c98a00; --error: #8e5cd9;
-  --other: #7a8499; --suppressed: #a0a8b8;
-  color-scheme: light dark;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #11141a; --card: #1a1f28; --fg: #e6e9ef; --muted: #98a2b8; --line: #2a303c; }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 48px; }
-h1 { margin: 0 0 4px; font-size: 22px; }
-h2 { margin: 32px 0 12px; font-size: 16px; }
-h3 { margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.sub, .note { color: var(--muted); }
-.sub { margin: 0 0 24px; }
-.note { font-size: 12px; margin: 10px 0 0; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.card, .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-.card .n { font-size: 26px; font-weight: 650; }
-.card .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-.score .n { font-size: 34px; }
-.bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); margin-top: 10px; }
-.bar span { display: block; }
-.charts { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 12px; margin-top: 12px; }
-@media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
-.donut { display: flex; align-items: center; gap: 20px; }
-.donut svg { width: 150px; flex: none; }
-.donut .dn { font-size: 8px; font-weight: 650; fill: var(--fg); }
-.donut .dl { font-size: 3px; fill: var(--muted); text-transform: uppercase; }
-.legend { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-.legend li { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-.sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.llr { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; }
-.track { position: relative; height: 12px; background: var(--line); border-radius: 3px; }
-.track::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); }
-.track span { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
-.scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; background: var(--card);
-  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-tr:last-child td { border-bottom: 0; }
-td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-td.cell { text-align: center; vertical-align: middle; }
-.matrix th:not(:first-child) { text-transform: none; text-align: center; }
-.sq { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px;
-  color: #fff; font-size: 13px; font-weight: 700; }
-.none { color: var(--muted); }
-code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
-td.tests code { overflow-wrap: normal; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 650;
-  color: #fff; white-space: nowrap; }
-.rate { position: relative; width: 120px; height: 8px; border-radius: 4px; background: var(--line); margin-bottom: 4px; }
-.rate span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
-.rate i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); }
-.err { color: var(--survived); font-size: 12px; }
-.empty { color: var(--muted); }
-"""
+_CSS = files("clastogen").joinpath("report.css").read_text(encoding="utf-8")
 
 
 def _badge(label: str, color: str) -> str:
