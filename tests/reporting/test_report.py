@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from clastogen.models import BaselineRecord, MutantExecution
-from clastogen.report import render_html, render_markdown
-from clastogen.scoring import summarize
+from clastogen.reporting.render import render_html, render_markdown
+from clastogen.reporting.scoring import summarize
 from clastogen.types import MutantStatus
 
 

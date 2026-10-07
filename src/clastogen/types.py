@@ -10,7 +10,7 @@ class Decision(StrEnum):
     INCONCLUSIVE = "INCONCLUSIVE"
 
 
-# Declaration order is the merge precedence used by clastogen.scoring.summarize.
+# Declaration order is the merge precedence used by clastogen.reporting.scoring.summarize.
 class MutantStatus(StrEnum):
     """Final disposition of a mutant after evaluation."""
 

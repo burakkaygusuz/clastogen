@@ -10,8 +10,8 @@ import sys
 import atheris
 
 with atheris.instrument_imports():
-    from clastogen.core.mutator import PromptMutator
-    from clastogen.report import _code
+    from clastogen.mutation.mutator import PromptMutator
+    from clastogen.reporting.render import _code
 
 MUTATOR = PromptMutator()
 

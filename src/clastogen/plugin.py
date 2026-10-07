@@ -11,9 +11,6 @@ from typing import cast
 import pytest
 from _pytest.tmpdir import tmppath_result_key
 
-from clastogen.core.injection import override_prompt, resolve_target
-from clastogen.core.mutator import PromptMutator
-from clastogen.core.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, SPRT, config_from_baseline, estimate_p0
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
     BaselineRecord,
@@ -24,8 +21,11 @@ from clastogen.models import (
     MutationSummary,
     SPRTConfig,
 )
-from clastogen.report import STATUS_LABELS, render_html, render_markdown
-from clastogen.scoring import score_line, summarize
+from clastogen.mutation.injection import override_prompt, resolve_target
+from clastogen.mutation.mutator import PromptMutator
+from clastogen.reporting.render import STATUS_LABELS, render_html, render_markdown
+from clastogen.reporting.scoring import score_line, summarize
+from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, SPRT, config_from_baseline, estimate_p0
 from clastogen.types import MutantStatus, RecordsPayload
 
 logger = logging.getLogger(__name__)

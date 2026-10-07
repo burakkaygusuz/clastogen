@@ -1,15 +1,15 @@
 import importlib
 
 import clastogen
-import clastogen.core.injection
-import clastogen.core.mutator
-import clastogen.core.sprt
 import clastogen.exceptions
 import clastogen.models
+import clastogen.mutation.injection
+import clastogen.mutation.mutator
 import clastogen.plugin
-import clastogen.report
-import clastogen.scoring
-import clastogen.stats
+import clastogen.reporting.render
+import clastogen.reporting.scoring
+import clastogen.stats.assertions
+import clastogen.stats.sprt
 import clastogen.types
 
 pytest_plugins = ["pytester"]
@@ -19,12 +19,12 @@ for mod in [
     clastogen.types,
     clastogen.exceptions,
     clastogen.models,
-    clastogen.scoring,
-    clastogen.report,
-    clastogen.core.mutator,
-    clastogen.core.sprt,
-    clastogen.core.injection,
-    clastogen.stats,
+    clastogen.reporting.scoring,
+    clastogen.reporting.render,
+    clastogen.mutation.mutator,
+    clastogen.stats.sprt,
+    clastogen.mutation.injection,
+    clastogen.stats.assertions,
     clastogen.plugin,
     clastogen,
 ]:

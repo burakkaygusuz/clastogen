@@ -5,8 +5,8 @@ import types
 import pytest
 
 from clastogen import Mutant
-from clastogen.core.injection import override_prompt
-from clastogen.core.mutator import PromptMutator, _clip
+from clastogen.mutation.injection import override_prompt
+from clastogen.mutation.mutator import PromptMutator, _clip
 
 
 def _register_module(monkeypatch: pytest.MonkeyPatch, name: str, **attrs: object) -> types.ModuleType:
