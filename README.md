@@ -102,9 +102,12 @@ Most LLM eval tools examine the output of your model. Clastogen examines your te
 | promptfoo | Which prompt and model give better output? Is my app safe from attacks? |
 | DeepEval, Ragas | Is the output relevant, correct and faithful to the context? |
 | Inspect AI | How well does a model or agent do a task? |
+| muteval | Does my eval suite catch a degraded prompt, RAG context, tool output or model? |
 | **Clastogen** | **If my system prompt breaks, do my tests fail?** |
 
 Clastogen runs on each pytest test that has the `clastogen` marker. This includes tests that use metrics from other eval libraries.
+
+muteval is the closest tool. It is a CLI with 22 operators across prompts, RAG context, tools and the model, adapters for deepeval, RAGAS and promptfoo, and a fixed number of runs per mutant. Clastogen has 4 prompt operators, but it runs inside pytest without adapters, and its SPRT stops each mutant as soon as the result is clear.
 
 ---
 
