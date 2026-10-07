@@ -319,6 +319,17 @@ The plugin runs the test without a mutant 10 times. It calculates $p_0 = (s + 1)
 
 > **Indifference zone:** Sometimes the mutant pass rate is near $(p_0 + p_1) / 2$. In this zone, a sequential test cannot make a decision with a finite number of samples. Clastogen stops at $N_{\max}$ and shows the result as `INCONCLUSIVE`. It does not guess.
 
+### Savings against a fixed sample size
+
+A fixed-N test with the same error rates ($\alpha = 0.05$, $\beta = 0.10$) is the smallest binomial test that fails at most $\alpha$ of the time at $p_0$ and passes at most $\beta$ of the time at $p_1$. The script computes it and compares it with the SPRT's mean calls:
+
+| Scenario | Fixed N (KILLED if passes $\le c$) | SPRT ASN at $p_0$ / $p_1$ | Saved | `INCONCLUSIVE` at $p_0$ / $p_1$ |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 ($p_0 = 0.90, p_1 = 0.60$) | 18 ($c = 13$) | 9.38 / 9.03 | 47.9% / 49.9% | 5.2% / 6.8% |
+| 2 ($p_0 = 0.75, p_1 = 0.50$) | 33 ($c = 20$) | 14.63 / 15.91 | 55.7% / 51.8% | 17.1% / 21.4% |
+
+The saving is not free: a fixed-N test always decides, while the truncated SPRT stops some runs at $N_{\max}$ as `INCONCLUSIVE`. These runs are counted in the ASN at $N_{\max}$ and in the score's denominator. Scenario 2 is worse because $N_{\max} = 25$ is below the fixed N of 33. Raise `max_steps` if inconclusive mutants matter more than API calls.
+
 ### Pass-rate guarantees
 
 `assert_pass_rate` tests $H_0$: rate $=$ `min_rate` against $H_1$: rate $=$ `min_rate - tolerance`. Both error rates are `1 - confidence`.

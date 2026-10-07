@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 import sys
 from dataclasses import dataclass
@@ -107,6 +108,23 @@ def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 
+def fixed_sample_size(config: SPRTConfig) -> tuple[int, int]:
+    """Smallest (n, c) of a one-sided binomial test with the SPRT's error rates: KILLED if passes <= c.
+
+    Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta.
+    """
+
+    def cdf(n: int, c: int, p: float) -> float:
+        return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
+
+    n = 1
+    while True:
+        for c in range(n + 1):
+            if cdf(n, c, config.p0) <= config.alpha and 1 - cdf(n, c, config.p1) <= config.beta:
+                return n, c
+        n += 1
+
+
 def format_simulation_report(title: str, config: SPRTConfig, stats_list: list[SimulationStats]) -> str:
     sprt = SPRT(config)
     lines: list[str] = [
@@ -129,6 +147,15 @@ def format_simulation_report(title: str, config: SPRTConfig, stats_list: list[Si
             f"{s.true_p:<8.2f} | {s.pct_killed:<10.2f} | {s.pct_survived:<11.2f} | "
             f"{s.pct_inconclusive:<14.2f} | {s.asn:<10.2f} | [{s.min_steps}, {s.max_steps}]{note}"
         )
+    n, c = fixed_sample_size(config)
+    lines.append("-" * 80)
+    lines.append(f" Fixed-N test, same alpha/beta: N={n}, KILLED if passes <= {c}")
+    lines.extend(
+        f" p={s.true_p:.2f}: SPRT ASN {s.asn:.2f} vs fixed {n}, saves {(1 - s.asn / n) * 100:.1f}%, "
+        f"{s.pct_inconclusive:.1f}% INCONCLUSIVE"
+        for s in stats_list
+        if abs(s.true_p - config.p0) < 1e-4 or abs(s.true_p - config.p1) < 1e-4
+    )
     lines.append("=" * 80)
     lines.append("")
     return "\n".join(lines)
