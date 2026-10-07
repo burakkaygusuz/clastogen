@@ -27,11 +27,15 @@ def estimate_p0(outcomes: Sequence[bool]) -> float:
     return (sum(outcomes) + 1) / (len(outcomes) + 2)
 
 
-def config_from_baseline(outcomes: Sequence[bool], *, delta: float, max_steps: int) -> SPRTConfig | None:
+def config_from_baseline(
+    outcomes: Sequence[bool], *, delta: float, max_steps: int, alpha: float = 0.05, beta: float = 0.10
+) -> SPRTConfig | None:
     """Builds the SPRT config from baseline outcomes, or None when the raw pass rate is below MIN_BASELINE_RATE."""
     if sum(outcomes) / len(outcomes) < MIN_BASELINE_RATE:
         return None
-    return SPRTConfig.from_absolute_drop(p0=estimate_p0(outcomes), delta=delta, max_steps=max_steps)
+    return SPRTConfig.from_absolute_drop(
+        p0=estimate_p0(outcomes), delta=delta, alpha=alpha, beta=beta, max_steps=max_steps
+    )
 
 
 class SPRT:
