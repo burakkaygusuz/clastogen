@@ -72,6 +72,8 @@ The two tests pass in a usual run. But Clastogen finds that the tests catch only
 - The strong test kills the three identity mutants. Each mutant needs only 2 runs.
 - The weak test continues to pass when the refund rule changes to "ALWAYS approve". It also passes when the refund limit changes from $50 to $500. These two mutants survive. They show a blind spot in your evals.
 
+Already use DeepEval? [`examples/test_deepeval_eval.py`](examples/test_deepeval_eval.py) is a plain `assert_test` test with a custom metric and one `clastogen` marker. Run it with `pytest --clastogen examples/test_deepeval_eval.py` and no adapter. It needs `deepeval`, which is not a Clastogen dependency, and skips if absent.
+
 ### How to read the report
 
 - **Statuses:**
