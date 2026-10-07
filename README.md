@@ -87,6 +87,7 @@ The two tests pass in a usual run. But Clastogen finds that the tests catch only
   - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`.
   - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses) and `baselines`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
+  - `--clastogen-md PATH`: writes a short Markdown summary: the score and one table of mutants. Use it for GitHub job summaries and pull request comments. See [CI](#ci).
 
 ---
 
@@ -187,6 +188,21 @@ A GitHub Actions job does not need special setup for Clastogen:
 - run: pip install clastogen
 - run: pytest --junitxml=junit.xml
 ```
+
+To show the result in the job summary and in a pull request comment, write a Markdown file:
+
+```yaml
+- run: uv run pytest --clastogen --clastogen-md=clastogen.md
+- if: always()
+  run: cat clastogen.md >> "$GITHUB_STEP_SUMMARY"
+- if: always() && github.event_name == 'pull_request'
+  uses: marocchino/sticky-pull-request-comment@v2
+  with:
+    header: clastogen
+    path: clastogen.md
+```
+
+The comment step needs `permissions: pull-requests: write`. Pull requests from forks get a read-only token, so the comment step fails there; the job summary still works.
 
 The run fails if the mutation score is less than the threshold. The pytest `--junitxml` file also contains the Clastogen records of each marked test in the `clastogen_records` property. If a tool must parse the records, use `--clastogen-json`.
 

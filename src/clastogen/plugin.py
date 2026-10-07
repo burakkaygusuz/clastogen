@@ -24,8 +24,8 @@ from clastogen.models import (
     MutationSummary,
     SPRTConfig,
 )
-from clastogen.report import STATUS_LABELS, render_html
-from clastogen.scoring import summarize
+from clastogen.report import STATUS_LABELS, render_html, render_markdown
+from clastogen.scoring import score_line, summarize
 from clastogen.types import MutantStatus, RecordsPayload
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         metavar="PATH",
         help="Output a self-contained HTML report of Clastogen mutation testing results.",
+    )
+    group.addoption(
+        "--clastogen-md",
+        action="store",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Output a Markdown summary for GitHub job summaries and pull request comments.",
     )
 
 
@@ -381,7 +389,7 @@ def _write_report(path: str, text: str) -> None:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Computes the mutation summary once, then exports JSON/HTML and enforces --clastogen-fail-under from it."""
+    """Computes the mutation summary once, then exports JSON/HTML/Markdown and enforces --clastogen-fail-under from it."""
     if not session.config.getoption("--clastogen", False) or _is_xdist_worker(session.config):
         return
 
@@ -408,6 +416,10 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     html_path = session.config.getoption("--clastogen-html", None)
     if html_path:
         _write_report(html_path, render_html(summary, state.results, state.baselines))
+
+    md_path = session.config.getoption("--clastogen-md", None)
+    if md_path:
+        _write_report(md_path, render_markdown(summary, state.results, state.baselines))
 
     fail_under = session.config.getoption("--clastogen-fail-under", None)
     all_errors = summary.total > 0 and summary.counts[MutantStatus.ERROR] == summary.total
@@ -513,20 +525,12 @@ def _write_summary(
             yellow=True,
         )
 
-    score = "N/A" if summary.score is None else f"{summary.score:.1f}%"
-    killed = summary.counts[MutantStatus.KILLED]
-    measured = killed + survived + inconclusive
-    detail = f"{killed} of {measured} killed"
-    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.SUPPRESSED)
-    excluded = [f"{n} {status.value.lower()}" for status in unscored if (n := summary.counts[status])]
-    if excluded:
-        detail += f"; not scored: {', '.join(excluded)}"
     # Without --clastogen-fail-under, any measured blind spot (score below 100%) shows red and N/A has no colour.
     if fail_under is None:
         ok = None if summary.score is None else summary.score == 100.0
     else:
         ok = not _fail_under_failed(summary, fail_under)
-    terminalreporter.write_line(f"Mutation Score: {score} ({detail})", bold=True, green=ok is True, red=ok is False)
+    terminalreporter.write_line(score_line(summary), bold=True, green=ok is True, red=ok is False)
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config) -> None:

@@ -136,7 +136,9 @@ def test_strong():
 def test_html_report_matches_json(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(agent=AGENT, test_k2="import pytest, agent\n" + _STRONG + _UNRELATED)
     html_out = pytester.path / "report" / "out.html"
-    pytester.runpytest("--clastogen", f"--clastogen-html={html_out}")
+    md_out = pytester.path / "report" / "out.md"
+    pytester.runpytest("--clastogen", f"--clastogen-html={html_out}", f"--clastogen-md={md_out}")
+    assert "Mutation Score: 100.0%" in md_out.read_text(encoding="utf-8")
     html = html_out.read_text(encoding="utf-8")
     assert "<title>Clastogen Report</title>" in html
     assert ">100.0%<" in html
