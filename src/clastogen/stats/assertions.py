@@ -4,8 +4,8 @@ import math
 from collections.abc import Callable
 from statistics import NormalDist
 
-from clastogen.core.sprt import SPRT, check_outcome
 from clastogen.models import PassRateResult, RegressionResult, SPRTConfig
+from clastogen.stats.sprt import SPRT, check_outcome
 from clastogen.types import Decision
 
 

@@ -9,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from clastogen import SPRT, Decision, SPRTConfig
-from clastogen.core.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, config_from_baseline
-from clastogen.stats import evaluate_pass_rate
+from clastogen.stats.assertions import evaluate_pass_rate
+from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, config_from_baseline
 
 
 @dataclass

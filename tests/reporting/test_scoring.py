@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from clastogen.models import MutantExecution
-from clastogen.scoring import summarize
+from clastogen.reporting.scoring import summarize
 from clastogen.types import MutantStatus
 
 

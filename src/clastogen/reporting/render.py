@@ -4,9 +4,9 @@ from dataclasses import replace
 from html import escape
 from importlib.resources import files
 
-from clastogen.core.sprt import MIN_BASELINE_RATE
 from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
-from clastogen.scoring import MEASURED, score_line
+from clastogen.reporting.scoring import MEASURED, score_line
+from clastogen.stats.sprt import MIN_BASELINE_RATE
 from clastogen.types import MutantStatus
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
@@ -28,7 +28,7 @@ _COLORS = {
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
 
-_CSS = files("clastogen").joinpath("report.css").read_text(encoding="utf-8")
+_CSS = files("clastogen").joinpath("reporting/report.css").read_text(encoding="utf-8")
 
 
 def _badge(label: str, color: str) -> str:

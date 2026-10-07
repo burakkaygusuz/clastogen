@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from clastogen.stats import (
+from clastogen.stats.assertions import (
     assert_no_regression,
     assert_pass_rate,
     compute_wilson_interval,
