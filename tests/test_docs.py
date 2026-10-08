@@ -51,6 +51,13 @@ def test_demo_reports_documented_score(tmp_path: Path) -> None:
     by_id = {r["mutant_id"]: r for r in data["results"]}
     inverted_identity = next(r for r in by_id.values() if "NEVER verify customer identity" in r["description"])
     assert inverted_identity["status"] == "KILLED"
+    assert inverted_identity["operator_name"] == "invert_negation"
+    assert inverted_identity["original_snippet"] == (
+        "You must always verify customer identity before providing balance details"
+    )
+    assert inverted_identity["mutated_snippet"] == (
+        "You must NEVER verify customer identity before providing balance details"
+    )
 
     documented = re.search(r'mutant_id = "([0-9a-f]{12})"', GUIDE)
     assert documented is not None
