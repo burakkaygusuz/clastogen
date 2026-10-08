@@ -3,4 +3,4 @@
 ## Checklist
 
 - [ ] Title follows Conventional Commits with a scope
-- [ ] `ruff`, `mypy` and `pytest` pass locally
+- [ ] `ruff`, `ty` and `pytest` pass locally

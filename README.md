@@ -372,7 +372,7 @@ Scenario 4 of the simulation script, with the default values (`min_rate=0.90, to
 | `pytest --clastogen` | Run the test suite with mutation testing and show the score |
 | `PYTHONPATH=src uv run python scripts/simulate_sprt.py` | Run the Monte Carlo simulation of SPRT power |
 | `uv run ruff check .` | Run the linter |
-| `uv run mypy src tests scripts` | Run strict type checks |
+| `uv run ty check` | Run type checks |
 
 ---
 

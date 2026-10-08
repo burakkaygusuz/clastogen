@@ -17,7 +17,6 @@ venv/
 
 # Testing, typing, and linting
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
 .hypothesis/
 

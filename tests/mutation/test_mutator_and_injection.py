@@ -72,7 +72,7 @@ def test_override_prompt_preserves_class_descriptors(monkeypatch: pytest.MonkeyP
     assert isinstance(AgentWithMethod.__dict__["get_prompt"], classmethod)
 
     with override_prompt("dummy_mod_desc:Agent.get_prompt", "Mutated string"):
-        assert AgentWithMethod.get_prompt == "Mutated string"  # type: ignore[comparison-overlap]
+        assert AgentWithMethod.get_prompt == "Mutated string"
 
     assert isinstance(AgentWithMethod.__dict__["get_prompt"], classmethod)
     assert AgentWithMethod.get_prompt() == "Class method prompt"
