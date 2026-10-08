@@ -120,6 +120,8 @@ class ClastogenParams:
                 continue
             if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 < value < 1.0:
                 raise ValueError(f"{name} must be a number in (0, 1), got {value!r}")
+        if self.p0 is not None and self.delta >= self.p0:
+            raise ValueError(f"delta must be < p0, got delta={self.delta}, p0={self.p0}")
         if self.alpha + self.beta >= 1.0:
             raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
 
@@ -155,12 +157,8 @@ class SPRTConfig:
         beta: float = 0.10,
         max_steps: int = 20,
     ) -> SPRTConfig:
-        """Derives p1 by subtracting delta from p0, clamping p0 to [0.02, 0.99] to prevent division by zero."""
-        clamped_p0 = min(max(p0, 0.02), 0.99)
-        p1 = max(clamped_p0 - delta, 0.01)
-        if p1 >= clamped_p0:
-            raise ValueError(f"Drop delta={delta} leaves p1={p1} >= p0={clamped_p0}")
-        return cls(alpha=alpha, beta=beta, p0=clamped_p0, p1=p1, max_steps=max_steps)
+        """Derives p1 by subtracting delta from p0."""
+        return cls(alpha=alpha, beta=beta, p0=p0, p1=p0 - delta, max_steps=max_steps)
 
 
 @dataclass(frozen=True)

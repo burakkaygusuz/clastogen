@@ -143,8 +143,8 @@ def assert_pass_rate(
         msg = (
             f"Statistical pass rate assertion failed{desc_str}\n"
             f"  Observed Rate   : {res.observed_rate * 100:.1f}% ({res.success_count} passes / {res.sample_count} samples)\n"
-            f"  Required Min    : {min_rate * 100:.1f}% (indifference zone down to {max(min_rate - tolerance, 0.0) * 100:.1f}%)\n"
-            f"  Wilson {res.confidence * 100:.0f}% CI   : [{res.ci_lower * 100:.1f}%, {res.ci_upper * 100:.1f}%]\n"
+            f"  Required Min    : {min_rate * 100:.1f}% (indifference zone down to {(min_rate - tolerance) * 100:.1f}%)\n"
+            f"  Wilson {res.confidence * 100:.0f}% CI   : [{res.ci_lower * 100:.1f}%, {res.ci_upper * 100:.1f}%] (not adjusted for early stopping)\n"
             f"  SPRT Decided    : {res.decided}"
         )
         raise AssertionError(msg)
