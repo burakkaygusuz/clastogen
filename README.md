@@ -167,6 +167,7 @@ The pytest `--junitxml` file also contains the Clastogen records of each marked 
 
 - [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, known limitations.
 - [Statistics](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md): statistical assertions API (`assert_pass_rate`, `assert_no_regression`), SPRT simulations and guarantees.
+- [Agent skill](https://github.com/burakkaygusuz/clastogen/blob/main/skills/clastogen/SKILL.md): lets a coding agent (Claude Code, Codex, Cursor) mark your evals, run Clastogen and fix the survivors. Copy `skills/clastogen/` into your agent's skills directory.
 - [Contributing](https://github.com/burakkaygusuz/clastogen/blob/main/CONTRIBUTING.md)
 
 ## License
