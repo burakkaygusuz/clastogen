@@ -51,10 +51,7 @@ def test_sprt_inconclusive_when_truncated() -> None:
     assert result.sample_count == 6
 
 
-def test_sprt_from_absolute_drop_handles_100_percent_pass_without_zerodivision() -> None:
-    config = SPRTConfig.from_absolute_drop(p0=1.0, delta=0.25)
-    assert config.p0 <= 0.99
-    assert config.p1 < config.p0
-
-    res = SPRT(config).run_evaluator(iter([False]).__next__)
-    assert res.decision == Decision.KILLED
+@pytest.mark.parametrize(("p0", "delta"), [(1.0, 0.25), (0.5, 0.6)])
+def test_sprt_from_absolute_drop_rejects_hypotheses_outside_unit_interval(p0: float, delta: float) -> None:
+    with pytest.raises(ValueError, match="0 < p1 < p0 < 1"):
+        SPRTConfig.from_absolute_drop(p0=p0, delta=delta)

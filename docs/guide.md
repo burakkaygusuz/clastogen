@@ -47,6 +47,8 @@ Thus, your code must read the prompt when it calls the model. Clastogen does not
 
 For each trial, Clastogen removes and builds again the function-scoped fixtures. Thus, a fixture such as `bot = {"system": agent.PROMPT}` gets the mutant. Clastogen builds module-scoped and session-scoped fixtures only one time, so they keep the original prompt. Values that your code captures at import time also keep the original prompt. Mutants of these values also show `SURVIVED`.
 
+All trials run in the call phase of the original test. Hooks of other plugins apply one time to the test and all its trials. For example, a `pytest-timeout` limit applies to the total time of the test and its trials.
+
 Incorrect: the code captures the prompt one time at import time. It does not read the changed attribute.
 
 ```python

@@ -97,6 +97,7 @@ def test_typo():
         ("max_steps=2.5", "max_steps must be an integer >= 1, got 2.5"),
         ('delta="0.3"', "delta must be a number in (0, 1), got '0.3'"),
         ("p0=1.5", "p0 must be a number in (0, 1), got 1.5"),
+        ("p0=0.5, delta=0.6", "delta must be < p0, got delta=0.6, p0=0.5"),
         ("alpha=1.5", "alpha must be a number in (0, 1), got 1.5"),
         ("alpha=0.5, beta=0.5", "alpha + beta must be < 1, got alpha=0.5, beta=0.5"),
     ],
