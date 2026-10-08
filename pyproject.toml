@@ -1,7 +1,7 @@
 [project]
 name = "clastogen"
 version = "0.4.3"
-description = "Mutation testing and statistical assertion framework for LLMs and AI Agents"
+description = "Mutation testing for LLM evals: breaks your system prompt and checks if your pytest evals notice"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Burak Kaygusuz" }]
