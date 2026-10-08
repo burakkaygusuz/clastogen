@@ -43,9 +43,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: uv run ruff format --check .
 
-      - name: Run type checker (mypy)
+      - name: Run type checker (ty)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
-        run: uv run mypy src tests scripts
+        run: uv run ty check
 
       - name: Run test suite with coverage
         run: uv run pytest --cov=clastogen --cov-report=xml

@@ -46,10 +46,10 @@ clastogen = "clastogen.plugin"
 [dependency-groups]
 dev = [
     "hypothesis>=6.115.0",
-    "mypy>=1.11.0",
     "pytest-cov>=5.0.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.7.0",
+    "ty>=0.0.85",
 ]
 
 [tool.semantic_release]
@@ -103,17 +103,12 @@ ignore = [
 "examples/*" = ["S101", "S311"]
 "fuzz/*" = ["S101"]
 
-[tool.mypy]
-python_version = "3.11"
-mypy_path = ["src", "scripts", "."]
-strict = true
-warn_return_any = true
-warn_unused_configs = true
+[tool.ty.analysis]
+# Optional: the DeepEval example skips without deepeval; atheris is Linux-only.
+allowed-unresolved-imports = ["deepeval.**", "atheris"]
 
-# Optional: the DeepEval example skips without deepeval.
-[[tool.mypy.overrides]]
-module = ["deepeval.*"]
-ignore_missing_imports = true
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

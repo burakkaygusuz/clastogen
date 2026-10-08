@@ -38,7 +38,7 @@ def test_wilson_interval_edges_are_exact_for_any_z_rounding(monkeypatch: pytest.
 )
 def test_wilson_interval_validations(args: tuple[float, ...], match: str) -> None:
     with pytest.raises(ValueError, match=match):
-        compute_wilson_interval(*args)  # type: ignore[arg-type]
+        compute_wilson_interval(*args)  # ty: ignore[invalid-argument-type]
 
 
 def _counting(outcome: bool) -> tuple[Callable[[], bool], list[int]]:
@@ -100,7 +100,7 @@ def test_evaluate_pass_rate_truncation_decides_by_llr_sign() -> None:
 )
 def test_evaluate_pass_rate_rejects_invalid_arguments(kwargs: dict[str, float], match: str) -> None:
     with pytest.raises(ValueError, match=match):
-        evaluate_pass_rate(lambda: True, **kwargs)  # type: ignore[arg-type]
+        evaluate_pass_rate(lambda: True, **kwargs)  # ty: ignore[invalid-argument-type]
 
 
 def test_paired_mcnemar_p_value_is_exact_when_candidate_is_not_worse() -> None:
@@ -158,7 +158,7 @@ def test_wilson_interval_hypothesis_property(k: int, n: int) -> None:
 
 def test_unpaired_regression_rejects_non_bool_evaluator_output() -> None:
     def bad() -> bool:
-        return 1  # type: ignore[return-value]
+        return 1  # ty: ignore[invalid-return-type]
 
     with pytest.raises(TypeError, match="bool"):
         evaluate_regression(bad, lambda: True, sample_count=5, paired=False)

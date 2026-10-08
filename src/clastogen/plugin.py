@@ -78,7 +78,7 @@ def _reset_function_fixtures(item: pytest.Item) -> None:
         if fixturedef.scope == "function":
             # tmp_path teardown reads this key, which pytest only sets after the call phase finishes.
             item.stash.setdefault(tmppath_result_key, {})
-            fixturedef.finish(request=req)  # type: ignore[arg-type]  # finish only reads request.node, which TopRequest has
+            fixturedef.finish(request=req)  # ty: ignore[invalid-argument-type]  # finish only reads request.node, which TopRequest has
             del fixture_defs[name]
             new_val = req.getfixturevalue(name)
             if name in item.funcargs:

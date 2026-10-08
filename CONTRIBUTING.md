@@ -15,7 +15,7 @@ CI runs these on every pull request; run them locally first:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src tests scripts
+uv run ty check
 uv run pytest
 uv run pytest --clastogen -n 2 examples/
 ```
