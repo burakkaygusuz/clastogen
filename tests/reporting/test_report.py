@@ -7,7 +7,9 @@ from clastogen.types import MutantStatus
 
 
 def _execution(test_id: str, mutant_id: str, status: MutantStatus) -> MutantExecution:
-    return MutantExecution(test_id, "app:PROMPT", mutant_id, f"mutant {mutant_id}", status, 2, 1.0)
+    return MutantExecution(
+        test_id, "app:PROMPT", mutant_id, f"mutant {mutant_id}", "op", "rule", "RULE", status, 2, 1.0
+    )
 
 
 def test_report_lists_survivors_first_with_every_test_they_passed() -> None:
@@ -31,7 +33,16 @@ def test_markdown_lists_survivors_first_and_renders_prompt_text_literally() -> N
         _execution("t.py::test_a", "survivor", MutantStatus.SURVIVED),
         _execution("t.py::test_b", "survivor", MutantStatus.SURVIVED),
         MutantExecution(
-            "t.py::test_a", "app:PROMPT", "pipe", "a | b <!--\n<details> @team `x`", MutantStatus.KILLED, 2, 1.0
+            "t.py::test_a",
+            "app:PROMPT",
+            "pipe",
+            "a | b <!--\n<details> @team `x`",
+            "op",
+            "rule",
+            "RULE",
+            MutantStatus.KILLED,
+            2,
+            1.0,
         ),
     ]
     flaky = BaselineRecord("t.py::test_flaky", "app:PROMPT", 5, 10, 0.5, stable=False)

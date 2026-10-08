@@ -50,6 +50,9 @@ class MutantExecution:
     target: str
     mutant_id: str
     description: str
+    operator_name: str
+    original_snippet: str
+    mutated_snippet: str
     status: MutantStatus
     sample_count: int | None = None
     llr: float | None = None
