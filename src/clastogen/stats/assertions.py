@@ -75,7 +75,7 @@ def evaluate_pass_rate(
     1 - confidence: a true rate of min_rate or higher passes with probability >= confidence, and a true rate of
     min_rate - tolerance or lower fails with probability >= confidence. Rates in between form the indifference
     zone where either outcome is acceptable. If max_samples runs out first, the sign of the log-likelihood ratio
-    decides, which keeps both error rates close to nominal when max_samples is large enough (see README).
+    decides, which keeps both error rates close to nominal when max_samples is large enough (see docs/statistics.md).
 
     Args:
         evaluator: Zero-argument callable returning True (pass) or False (fail).
