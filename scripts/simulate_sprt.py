@@ -4,13 +4,18 @@ import math
 import random  # Seeded PRNG: the simulations must be reproducible, not unpredictable.
 import sys
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from clastogen import SPRT, Decision, SPRTConfig
-from clastogen.stats.assertions import evaluate_pass_rate
+from clastogen.stats.assertions import compute_wilson_interval, evaluate_pass_rate
 from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, config_from_baseline
+
+FLOW_BASELINES = (0.70, 0.80, 0.90, 0.95, 0.99)
+FIXED_SIZES = (10, 20, 30, 50, 100)
+FAMILY_SIZE = 20
 
 
 @dataclass
@@ -24,9 +29,12 @@ class SimulationStats:
     min_steps: int
     max_steps: int
     pct_rejected: float = 0.0
+    pct_any_killed: float = 0.0
 
 
-def _tally(decisions: list[Decision], steps: list[int], true_p: float, rejected: float) -> SimulationStats:
+def _tally(
+    decisions: list[Decision], steps: list[int], true_p: float, rejected: float, any_killed: float = 0.0
+) -> SimulationStats:
     n = len(decisions)
     return SimulationStats(
         true_p=true_p,
@@ -38,6 +46,7 @@ def _tally(decisions: list[Decision], steps: list[int], true_p: float, rejected:
         min_steps=min(steps),
         max_steps=max(steps),
         pct_rejected=rejected,
+        pct_any_killed=any_killed,
     )
 
 
@@ -62,6 +71,12 @@ def run_simulation(
     return _tally([r.decision for r in results], [r.sample_count for r in results], true_p, 0.0)
 
 
+def _baseline_config(rng: random.Random, baseline_p: float, delta: float, max_steps: int) -> SPRTConfig | None:
+    """Mimics the plugin baseline: the passing test run plus BASELINE_RUNS - 1 reruns; None when rejected as flaky."""
+    baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
+    return config_from_baseline(baseline, delta=delta, max_steps=max_steps)
+
+
 def run_full_flow_simulation(
     baseline_p: float,
     mutant_p: float,
@@ -69,36 +84,63 @@ def run_full_flow_simulation(
     max_steps: int = 20,
     trials: int = 10_000,
     seed: int = 42,
+    family_size: int = FAMILY_SIZE,
 ) -> SimulationStats:
     """Simulates the plugin decision path: baseline runs -> Laplace p0 -> SPRT on the mutant.
 
     Rates are over baselines that were accepted; rejected (flaky) baselines are reported in pct_rejected.
+    pct_any_killed is the share of accepted baselines where at least one of family_size further mutants with the
+    same true pass rate is KILLED; those mutants share the baseline p0, so their verdicts are correlated.
     """
     if type(trials) is not int or trials < 1:
         raise ValueError("trials must be an integer >= 1")
+    if type(family_size) is not int or family_size < 1:
+        raise ValueError("family_size must be an integer >= 1")
     if not (0.0 <= baseline_p <= 1.0 and 0.0 <= mutant_p <= 1.0):
         raise ValueError("baseline_p and mutant_p must be in [0, 1]")
 
     rng = random.Random(seed)
+    family_rng = random.Random(seed + 1)  # Separate stream: the single-mutant rates stay independent of family_size.
     decisions: list[Decision] = []
     steps: list[int] = []
+    any_killed = 0
 
     def mutant_evaluator() -> bool:
         return rng.random() < mutant_p  # NOSONAR
 
+    def family_evaluator() -> bool:
+        return family_rng.random() < mutant_p  # NOSONAR
+
     for _ in range(trials):
-        baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
-        config = config_from_baseline(baseline, delta=delta, max_steps=max_steps)
+        config = _baseline_config(rng, baseline_p, delta, max_steps)
         if config is None:
             continue
-        result = SPRT(config).run_evaluator(mutant_evaluator)
+        sprt = SPRT(config)
+        result = sprt.run_evaluator(mutant_evaluator)
         decisions.append(result.decision)
         steps.append(result.sample_count)
+        any_killed += any(sprt.run_evaluator(family_evaluator).decision == Decision.KILLED for _ in range(family_size))
 
     rejected = (trials - len(decisions)) / trials * 100.0
     if not decisions:
         return SimulationStats(mutant_p, 0, 0.0, 0.0, 0.0, 0.0, 0, 0, rejected)
-    return _tally(decisions, steps, mutant_p, rejected)
+    return _tally(decisions, steps, mutant_p, rejected, any_killed / len(decisions) * 100.0)
+
+
+def run_fixed_n_flow(
+    baseline_p: float, mutant_p: float, n: int, delta: float = 0.30, trials: int = 10_000, seed: int = 42
+) -> float:
+    """Percent KILLED by a fixed-N exact binomial test at the plugin's estimated p0, over accepted baselines."""
+    rng = random.Random(seed)
+    killed = accepted = 0
+    for _ in range(trials):
+        config = _baseline_config(rng, baseline_p, delta, max_steps=1)
+        if config is None:
+            continue
+        accepted += 1
+        passes = sum(rng.random() < mutant_p for _ in range(n))  # NOSONAR
+        killed += fixed_n_decision(passes, n, config.p0, config.alpha)
+    return killed / accepted * 100.0 if accepted else 0.0
 
 
 def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42) -> tuple[float, float]:
@@ -108,19 +150,26 @@ def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 
+def _binom_cdf(n: int, c: int, p: float) -> float:
+    """Exact P(X <= c) for X ~ Binomial(n, p)."""
+    return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
+
+
+@cache
+def fixed_n_decision(passes: int, n: int, p0: float, alpha: float) -> bool:
+    """One-sided exact binomial test: KILLED iff P(X <= passes | n, p0) <= alpha."""
+    return _binom_cdf(n, passes, p0) <= alpha
+
+
 def fixed_sample_size(config: SPRTConfig) -> tuple[int, int]:
     """Smallest (n, c) of a one-sided binomial test with the SPRT's error rates: KILLED if passes <= c.
 
     Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta.
     """
-
-    def cdf(n: int, c: int, p: float) -> float:
-        return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
-
     n = 1
     while True:
         for c in range(n + 1):
-            if cdf(n, c, config.p0) <= config.alpha and 1 - cdf(n, c, config.p1) <= config.beta:
+            if _binom_cdf(n, c, config.p0) <= config.alpha and 1 - _binom_cdf(n, c, config.p1) <= config.beta:
                 return n, c
         n += 1
 
@@ -148,36 +197,68 @@ def format_simulation_report(title: str, config: SPRTConfig, stats_list: list[Si
             f"{s.pct_inconclusive:<14.2f} | {s.asn:<10.2f} | [{s.min_steps}, {s.max_steps}]{note}"
         )
     n, c = fixed_sample_size(config)
-    lines.append("-" * 80)
-    lines.append(f" Fixed-N test, same alpha/beta: N={n}, KILLED if passes <= {c}")
+    lines.extend(["-" * 80, f" Fixed-N test, same alpha/beta: N={n}, KILLED if passes <= {c}"])
     lines.extend(
         f" p={s.true_p:.2f}: SPRT ASN {s.asn:.2f} vs fixed {n}, saves {(1 - s.asn / n) * 100:.1f}%, "
         f"{s.pct_inconclusive:.1f}% INCONCLUSIVE"
         for s in stats_list
         if abs(s.true_p - config.p0) < 1e-4 or abs(s.true_p - config.p1) < 1e-4
     )
-    lines.append("=" * 80)
-    lines.append("")
+    lines.extend(["=" * 80, ""])
     return "\n".join(lines)
 
 
-def format_full_flow_report(title: str, rows: list[tuple[float, SimulationStats]]) -> str:
+def _with_ci(pct: float, n: int) -> str:
+    """Formats a simulated percentage with its Wilson 95% interval."""
+    if n == 0:
+        return "n/a"
+    low, high = compute_wilson_interval(round(pct * n / 100), n)
+    return f"{pct:.2f} [{low * 100:.2f}, {high * 100:.2f}]"
+
+
+def format_full_flow_report(
+    title: str, rows: list[tuple[float, SimulationStats]], family_size: int = FAMILY_SIZE
+) -> str:
     lines: list[str] = [
-        "=" * 80,
+        "=" * 100,
         f" {title} ",
         f" Baseline: {BASELINE_RUNS} runs, Laplace p0 = (s+1)/(n+2), rejected if raw rate < {MIN_BASELINE_RATE:.2f}",
-        "-" * 80,
-        f"{'Base P':<7} | {'Mutant P':<8} | {'REJECTED %':<10} | {'KILLED %':<8} | {'SURVIVED %':<10} | "
-        f"{'INCONCLUSIVE %':<14} | {'ASN (Mean)'}",
-        "-" * 80,
+        " KILLED and SURVIVED show Wilson 95% intervals over accepted baselines",
+        "-" * 100,
+        f"{'Base P':<7} | {'Mutant P':<8} | {'REJECTED %':<10} | {'KILLED %':<22} | {'SURVIVED %':<22} | "
+        f"{'INCONCL. %':<10} | {'ASN'}",
+        "-" * 100,
     ]
     for baseline_p, s in rows:
         lines.append(
-            f"{baseline_p:<7.2f} | {s.true_p:<8.2f} | {s.pct_rejected:<10.2f} | {s.pct_killed:<8.2f} | "
-            f"{s.pct_survived:<10.2f} | {s.pct_inconclusive:<14.2f} | {s.asn:.2f}"
+            f"{baseline_p:<7.2f} | {s.true_p:<8.2f} | {s.pct_rejected:<10.2f} | {_with_ci(s.pct_killed, s.trials):<22} | "
+            f"{_with_ci(s.pct_survived, s.trials):<22} | {s.pct_inconclusive:<10.2f} | {s.asn:.2f}"
         )
-    lines.append("=" * 80)
-    lines.append("")
+    lines.append("-" * 100)
+    if unchanged := [s for baseline_p, s in rows if s.true_p == baseline_p]:
+        lines.append(
+            f" Unchanged mutants: worst false-kill rate {max(s.pct_killed for s in unchanged):.2f}%; "
+            f"worst P(>= 1 false kill among {family_size} sharing one baseline) = "
+            f"{max(s.pct_any_killed for s in unchanged):.1f}%"
+        )
+    lines.extend(["=" * 100, ""])
+    return "\n".join(lines)
+
+
+def format_fixed_n_report(title: str, rows: list[tuple[float, float, dict[int, float]]]) -> str:
+    sizes = list(rows[0][2])
+    lines: list[str] = [
+        "=" * 80,
+        f" {title} ",
+        "-" * 80,
+        f"{'Base P':<7} | {'Mutant P':<8} | " + " | ".join(f"{f'N={n}':<7}" for n in sizes),
+        "-" * 80,
+    ]
+    lines.extend(
+        f"{baseline_p:<7.2f} | {mutant_p:<8.2f} | " + " | ".join(f"{killed[n]:<7.2f}" for n in sizes)
+        for baseline_p, mutant_p, killed in rows
+    )
+    lines.extend(["=" * 80, ""])
     return "\n".join(lines)
 
 
@@ -206,13 +287,21 @@ def main() -> None:
         stats_2,
     )
 
-    flow_rows = [
-        (base, run_full_flow_simulation(base, mutant, trials=trials))
-        for base, mutant in [(0.95, 0.95), (0.90, 0.90), (0.85, 0.85), (0.95, 0.60), (0.95, 0.30), (0.95, 0.0)]
-    ]
+    pairs = [(base, mutant) for base in FLOW_BASELINES for mutant in (base, round(base - 0.30, 2))]
+    pairs += [(0.95, 0.30), (0.95, 0.0)]
+    flow_rows = [(base, run_full_flow_simulation(base, mutant, trials=trials)) for base, mutant in pairs]
     print(
         format_full_flow_report(
             "Scenario 3: Full plugin flow (10-run Laplace baseline -> delta=0.30 SPRT, max_steps=20)", flow_rows
+        )
+    )
+    fixed_rows = [
+        (base, mutant, {n: run_fixed_n_flow(base, mutant, n, trials=trials) for n in FIXED_SIZES})
+        for base, mutant in pairs
+    ]
+    print(
+        format_fixed_n_report(
+            "Scenario 3b: same flow, fixed-N exact binomial test at alpha=0.05 (KILLED %)", fixed_rows
         )
     )
 
