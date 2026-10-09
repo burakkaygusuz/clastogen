@@ -1,6 +1,6 @@
 [project]
 name = "clastogen"
-version = "0.5.1"
+version = "0.5.2"
 description = "Mutation testing for LLM evals: breaks your system prompt and checks if your pytest evals notice"
 readme = "README.md"
 license = "MIT"
