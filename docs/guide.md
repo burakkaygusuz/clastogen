@@ -41,9 +41,9 @@ pytest --clastogen -s --log-cli-level=INFO
 
 ### Read the prompt at call time
 
-For each trial, Clastogen replaces the module attribute (or class attribute) with the mutant. After the trial, it puts back the original value. It also replaces module-level aliases that have the same name and refer to the same string object. An example is `from my_app.agent import SYSTEM_PROMPT` at the top of a different module.
+For each mutant, Clastogen replaces the module attribute (or class attribute) with the mutant. After all trials of that mutant, it puts back the original value. It also replaces module-level aliases that have the same name and refer to the same string object. An example is `from my_app.agent import SYSTEM_PROMPT` at the top of a different module.
 
-Thus, your code must read the prompt when it calls the model. Clastogen does not change copies that your code made before the trial. Mutants of these copies always show `SURVIVED`.
+Thus, your code must read the prompt when it calls the model. Clastogen does not change copies that your code made before the trial, such as a default argument (`def ask(msg, system=SYSTEM_PROMPT)`), a closure or a list that holds the string. Mutants of these copies always show `SURVIVED`.
 
 For each trial, Clastogen removes and builds again the function-scoped fixtures. Thus, a fixture such as `bot = {"system": agent.PROMPT}` gets the mutant. Clastogen builds module-scoped and session-scoped fixtures only one time, so they keep the original prompt. Values that your code captures at import time also keep the original prompt. Mutants of these values also show `SURVIVED`.
 

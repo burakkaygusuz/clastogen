@@ -79,14 +79,49 @@ These results come from a Monte Carlo simulation (`PYTHONPATH=src uv run python 
 
 The plugin runs the test without a mutant 10 times. It calculates $p_0 = (s + 1) / (n + 2)$ (the Laplace rule of succession). If the raw pass rate is less than 80%, the plugin rejects the baseline. Then it runs the SPRT on each mutant with $p_1 = p_0 - 0.30$. The rates below include only the accepted baselines.
 
-| Baseline P | Mutant P | Baseline rejected % | KILLED %    | SURVIVED % | INCONCLUSIVE % | ASN (Mean) | Note             |
-| :--------- | :------- | :------------------ | :---------- | :--------- | :------------- | :--------- | :--------------- |
-| **0.95**   | 0.95     | 0.92%               | **0.38%**   | 98.13%     | 1.48%          | **7.40**   | Unchanged mutant |
-| **0.90**   | 0.90     | 5.28%               | **2.19%**   | 92.61%     | 5.20%          | **8.57**   | Unchanged mutant |
-| **0.85**   | 0.85     | 14.00%              | **5.02%**   | 86.05%     | 8.93%          | **9.58**   | Unchanged mutant |
-| **0.95**   | 0.60     | 1.00%               | 76.61%      | 11.05%     | 12.34%         | **9.64**   | Moderate defect  |
-| **0.95**   | 0.30     | 0.83%               | **99.73%**  | 0.13%      | 0.14%          | **4.52**   | Severe defect    |
-| **0.95**   | 0.00     | 0.83%               | **100.00%** | 0.00%      | 0.00%          | **2.43**   | Total failure    |
+Each row runs 10,000 trials. The brackets give Wilson 95% intervals over the accepted baselines.
+
+| Baseline P | Mutant P | Baseline rejected % | KILLED % | SURVIVED % | INCONCLUSIVE % | ASN (Mean) | Note |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **0.70** | 0.70 | 53.57% | **18.93%** [17.83, 20.08] | 56.34% [54.91, 57.76] | 24.73% | **12.74** | Unchanged mutant |
+| **0.70** | 0.40 | 53.18% | 91.14% [90.29, 91.92] | 2.46% [2.05, 2.94] | 6.41% | **8.82** | Drop of $\delta$ |
+| **0.80** | 0.80 | 26.76% | **8.92%** [8.28, 9.59] | 77.95% [76.99, 78.88] | 13.13% | **10.66** | Unchanged mutant |
+| **0.80** | 0.50 | 25.97% | 76.59% [75.61, 77.54] | 7.73% [7.14, 8.36] | 15.68% | **10.41** | Drop of $\delta$ |
+| **0.90** | 0.90 | 5.28% | **2.19%** [1.91, 2.50] | 92.61% [92.07, 93.12] | 5.20% | **8.57** | Unchanged mutant |
+| **0.90** | 0.60 | 5.50% | 66.15% [65.19, 67.10] | 15.64% [14.92, 16.39] | 18.21% | **10.83** | Drop of $\delta$ |
+| **0.95** | 0.95 | 0.92% | **0.38%** [0.28, 0.53] | 98.13% [97.85, 98.38] | 1.48% | **7.40** | Unchanged mutant |
+| **0.95** | 0.65 | 1.08% | 64.34% [63.40, 65.28] | 18.71% [17.96, 19.49] | 16.94% | **10.61** | Drop of $\delta$ |
+| **0.99** | 0.99 | 0.01% | **0.01%** [0.00, 0.06] | 99.94% [99.87, 99.97] | 0.05% | **6.31** | Unchanged mutant |
+| **0.99** | 0.69 | 0.00% | 65.92% [64.99, 66.84] | 19.27% [18.51, 20.05] | 14.81% | **10.24** | Drop of $\delta$ |
+| **0.95** | 0.30 | 0.83% | **99.73%** [99.60, 99.81] | 0.13% [0.08, 0.22] | 0.14% | **4.52** | Severe defect |
+| **0.95** | 0.00 | 0.83% | **100.00%** [99.96, 100.00] | 0.00% [0.00, 0.04] | 0.00% | **2.43** | Total failure |
+
+### Scenario 3b: Same flow with a fixed-N exact test
+
+Scenario 3b uses the same accepted baselines. It replaces the SPRT with an exact one-sided binomial test at the estimated $p_0$ and $\alpha = 0.05$. The test runs $N$ calls and kills the mutant if $P(X \le \text{passes} \mid p_0) \le \alpha$. Cells give KILLED %:
+
+| Baseline P | Mutant P | N = 10 | N = 20 | N = 30 | N = 50 | N = 100 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **0.70** | 0.70 | 12.85% | 25.66% | 26.18% | 39.98% | 56.87% |
+| **0.70** | 0.40 | 73.92% | 96.75% | 98.71% | 100.00% | 100.00% |
+| **0.80** | 0.80 | 7.80% | 11.01% | 13.11% | 16.57% | 25.76% |
+| **0.80** | 0.50 | 58.46% | 86.90% | 91.40% | 98.77% | 100.00% |
+| **0.90** | 0.90 | 3.16% | 2.46% | 2.99% | 2.52% | 4.93% |
+| **0.90** | 0.60 | 52.93% | 76.95% | 82.23% | 92.99% | 98.72% |
+| **0.95** | 0.95 | 0.76% | 0.20% | 0.29% | 0.01% | 0.02% |
+| **0.95** | 0.65 | 54.67% | 75.20% | 83.25% | 92.04% | 97.76% |
+| **0.99** | 0.99 | 0.01% | 0.00% | 0.00% | 0.00% | 0.00% |
+| **0.99** | 0.69 | 59.70% | 75.81% | 89.64% | 96.28% | 99.42% |
+
+### Statistical caveats
+
+The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scenarios 1 and 2). The full flow does not have a known $p_0$, so these sources of error apply:
+
+- **Wald approximation and truncation:** Wald's boundaries are approximate. At $N_{\max}$, the SPRT stops some runs as `INCONCLUSIVE`, so the real error rates differ from the nominal values.
+- **Estimated $p_0$:** The Laplace estimate from 10 runs is noisy. For a high true pass rate, it is biased down: 10/10 gives $p_0 = 0.917$.
+- **Selection by the 80% rule:** The plugin accepts a low-rate baseline only after a lucky streak, so the estimated $p_0$ is too high. The false-kill rate for an unchanged mutant is then 18.93% at a true rate of 0.70 and 8.92% at 0.80. Both rates are above the nominal 5%. A fixed-N test at the estimated $p_0$ has the same problem (Scenario 3b).
+- **Power at a drop of exactly $\delta$:** For baselines of 0.90 or more, the SPRT kills only 64–66% of these mutants, not the nominal 90%. Larger drops are killed reliably.
+- **Many mutants:** Each unchanged mutant can give a false kill. The expected number of false kills is approximately $m \cdot \alpha$ for $m$ mutants. Mutants of one test share the same baseline $p_0$, so their verdicts are correlated. In the simulation, the worst case is a true rate of 0.70: at least 1 false kill among 20 unchanged mutants has a probability of 89.1%. Independent mutants would give 98.5%.
 
 > **Indifference zone:** Sometimes the mutant pass rate is near $(p_0 + p_1) / 2$. In this zone, a sequential test cannot make a decision with a finite number of samples. Clastogen stops at $N_{\max}$ and shows the result as `INCONCLUSIVE`. It does not guess.
 
