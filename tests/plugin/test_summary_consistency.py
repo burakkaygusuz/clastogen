@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pytest_check import check
 
 AGENT = '''
 PROMPT = """You must never approve refunds over $50.
@@ -34,11 +35,11 @@ def test_survived_does_not_mask_killed_regardless_of_order(pytester: pytest.Pyte
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
     stdout = result.stdout.str()
-    assert "Mutation Score: 100.0% (2 of 2 killed)" in stdout
     data = json.loads(json_out.read_text(encoding="utf-8"))
-    assert data["counts"]["KILLED"] == 2
-    assert data["counts"]["SURVIVED"] == 0
-    assert data["mutation_score"] == 100.0
+    check.is_in("Mutation Score: 100.0% (2 of 2 killed)", stdout)
+    check.equal(data["counts"]["KILLED"], 2)
+    check.equal(data["counts"]["SURVIVED"], 0)
+    check.equal(data["mutation_score"], 100.0)
 
 
 def test_test_never_touching_prompt_survives(pytester: pytest.Pytester) -> None:
@@ -46,11 +47,11 @@ def test_test_never_touching_prompt_survives(pytester: pytest.Pytester) -> None:
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
     stdout = result.stdout.str()
-    assert "Mutation Score: 0.0% (0 of 2 killed)" in stdout
-    assert "passed in test_unrelated" in stdout
     data = json.loads(json_out.read_text(encoding="utf-8"))
-    assert data["counts"]["SURVIVED"] == 2
-    assert data["mutation_score"] == 0.0
+    check.is_in("Mutation Score: 0.0% (0 of 2 killed)", stdout)
+    check.is_in("passed in test_unrelated", stdout)
+    check.equal(data["counts"]["SURVIVED"], 2)
+    check.equal(data["mutation_score"], 0.0)
 
 
 def test_terminal_json_and_fail_under_agree_with_flaky_baseline(pytester: pytest.Pytester) -> None:
@@ -88,7 +89,7 @@ def test_strong():
     assert f"Mutation Score: {score:.1f}% (" in stdout
     assert "Adjusted" not in stdout
     assert f"Clastogen fail-under 101.0%: FAILED (score {score:.1f}%)" in stdout
-    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
 
     assert sorted(b["stable"] for b in data["baselines"]) == [False, True, True]
     flaky = [b for b in data["baselines"] if not b["stable"]]
@@ -113,7 +114,7 @@ def test_skips_under_mutation():
     )
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=80")
     assert "Clastogen fail-under 80.0%: FAILED (no measurable mutants)" in result.stdout.str()
-    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
 
 
 def test_fail_under_passing_prints_no_failed_line(pytester: pytest.Pytester) -> None:
@@ -130,7 +131,7 @@ def test_strong():
     )
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50")
     assert "FAILED" not in result.stdout.str().split("Mutation Testing Summary", 1)[1]
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
 
 
 def test_html_report_matches_json(pytester: pytest.Pytester) -> None:
@@ -138,14 +139,14 @@ def test_html_report_matches_json(pytester: pytest.Pytester) -> None:
     html_out = pytester.path / "report" / "out.html"
     md_out = pytester.path / "report" / "out.md"
     pytester.runpytest("--clastogen", f"--clastogen-html={html_out}", f"--clastogen-md={md_out}")
-    assert "Mutation Score: 100.0%" in md_out.read_text(encoding="utf-8")
     html = html_out.read_text(encoding="utf-8")
-    assert "<title>Clastogen Report</title>" in html
-    assert ">100.0%<" in html
-    assert html.count('<span class="badge" style="background:var(--killed)">KILLED</span>') == 2
-    assert 'aria-label="Mutant status distribution"' in html
-    assert html.count('title="KILLED">✓</span>') == 2
-    assert "<script" not in html
+    check.is_in("Mutation Score: 100.0%", md_out.read_text(encoding="utf-8"))
+    check.is_in("<title>Clastogen Report</title>", html)
+    check.is_in(">100.0%<", html)
+    check.equal(html.count('<span class="badge" style="background:var(--killed)">KILLED</span>'), 2)
+    check.is_in('aria-label="Mutant status distribution"', html)
+    check.equal(html.count('title="KILLED">✓</span>'), 2)
+    check.is_not_in("<script", html)
 
 
 def test_json_and_html_report_the_same_executions(pytester: pytest.Pytester) -> None:
@@ -180,8 +181,8 @@ def test_errors_under_mutation():
         assert html.count(f'title="{status}">') == statuses.count(status)
 
     unmeasured = [e for e in data["executions"] + data["results"] if e["status"] in ("ERROR", "SKIPPED")]
-    assert unmeasured
-    assert all(e["sample_count"] is None and e["llr"] is None for e in unmeasured)
+    assert unmeasured, data["executions"]
+    assert all(e["sample_count"] is None and e["llr"] is None for e in unmeasured), unmeasured
 
 
 def test_any_mutant_error_fails_session_with_reason(pytester: pytest.Pytester) -> None:
@@ -201,5 +202,5 @@ def test_errors_under_mutation():
 """,
     )
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50")
-    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
     result.stdout.fnmatch_lines(["*Mutation Score: 100.0%*", "*Clastogen: 1 mutant error(s)*"])

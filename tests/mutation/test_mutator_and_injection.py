@@ -3,6 +3,7 @@ import sys
 import types
 
 import pytest
+from pytest_check import check
 
 from clastogen import Mutant
 from clastogen.mutation.injection import override_prompt
@@ -99,8 +100,8 @@ def test_prompt_mutator_preserves_abbreviations_and_cleans_dangling_dots() -> No
     mutator = PromptMutator(target_symbol="PROMPT")
     rules = mutator.extract_candidate_rules(text)
 
-    assert any("e.g. passwords and tokens" in r for r in rules)
-    assert not any(r.startswith(("g.", ".g.")) for r in rules)
+    assert any("e.g. passwords and tokens" in r for r in rules), rules
+    assert not any(r.startswith(("g.", ".g.")) for r in rules), rules
 
     mutants = mutator.generate_mutants(text, max_mutants=10)
     for m in mutants:
@@ -117,7 +118,7 @@ def test_prompt_mutator_samples_evenly_across_long_prompts() -> None:
 
     assert len(mutants) == 6
     descriptions = " ".join(m.description for m in mutants)
-    assert any(f"item {i}" in descriptions for i in (10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
+    assert any(f"item {i}" in descriptions for i in (10, 11, 12, 13, 14, 15, 16, 17, 18, 19)), descriptions
 
 
 def test_override_prompt_patches_same_name_aliases_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,14 +129,13 @@ def test_override_prompt_patches_same_name_aliases_only(monkeypatch: pytest.Monk
     captured = {"config": {"system": prompt}}
 
     with override_prompt("xm_agent:PROMPT", "mutated"):
-        assert agent.PROMPT == "mutated"
-        assert importer.PROMPT == "mutated"
-        assert renamed.SYSTEM == "original"
-        assert captured["config"]["system"] == "original"
+        check.equal(agent.PROMPT, "mutated")
+        check.equal(importer.PROMPT, "mutated")
+        check.equal(renamed.SYSTEM, "original")
+        check.equal(captured["config"]["system"], "original")
 
-    assert agent.PROMPT == "original"
-    assert importer.PROMPT == "original"
-    assert importer.PROMPT is prompt
+    check.equal(agent.PROMPT, "original")
+    check.is_(importer.PROMPT, prompt)
 
 
 def test_override_prompt_none_target_raises_type_error(monkeypatch: pytest.MonkeyPatch) -> None:

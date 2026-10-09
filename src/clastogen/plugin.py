@@ -46,7 +46,7 @@ def load_suppressions(root_path: Path) -> set[str]:
         raw_data = tomllib.loads(candidate.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise pytest.UsageError(f"Cannot read '{candidate}': {exc}") from exc
-    items = raw_data.get("suppressions")
+    items = raw_data.get("suppressions", [])
     if not isinstance(items, list):
         raise pytest.UsageError(f"Invalid suppression format in '{candidate}': expected [[suppressions]] tables.")
 
@@ -292,16 +292,13 @@ def _execution(
 def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExecution:
     """Runs the SPRT with the mutant injected; clastogen-side failures and unexpected test errors become ERROR."""
 
-    def evaluator() -> bool:
+    try:
         with ExitStack() as stack:
             try:
                 stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
             except Exception as exc:
                 raise TrialError(f"prompt injection failed: {type(exc).__name__}: {exc}") from exc
-            return _run_trial(item)
-
-    try:
-        res = sprt.run_evaluator(evaluator)
+            res = sprt.run_evaluator(lambda: _run_trial(item))
     except TrialSkipped:
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, item.nodeid)
         return _execution(item, mutant, MutantStatus.SKIPPED)

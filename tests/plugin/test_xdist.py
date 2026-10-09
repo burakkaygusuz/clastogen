@@ -39,7 +39,7 @@ def test_identity():
         "--clastogen", "-n", "2", "--dist", "loadfile", f"--clastogen-json={json_out}"
     )
     assert "INTERNALERROR" not in result.stdout.str() + result.stderr.str()
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert {b["test_id"].split("::")[-1] for b in data["baselines"]} == {"test_refunds", "test_identity"}

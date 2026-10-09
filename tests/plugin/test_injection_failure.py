@@ -30,4 +30,4 @@ def test_frozen():
     result.assert_outcomes(passed=1)
     results = json.loads(json_out.read_text(encoding="utf-8"))["results"]
     assert [r["status"] for r in results] == ["ERROR", "ERROR"]
-    assert all("prompt injection failed: FrozenInstanceError" in r["error"] for r in results)
+    assert all("prompt injection failed: FrozenInstanceError" in r["error"] for r in results), results

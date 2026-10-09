@@ -1,6 +1,7 @@
 import math
 
 import pytest
+from pytest_check import check
 
 from clastogen import SPRT, Decision, SPRTConfig
 
@@ -8,12 +9,12 @@ from clastogen import SPRT, Decision, SPRTConfig
 def test_wald_thresholds_and_llr_increments_exact() -> None:
     sprt = SPRT(SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60))
 
-    assert sprt.threshold_a == pytest.approx(math.log(0.90 / 0.05))
-    assert sprt.threshold_b == pytest.approx(math.log(0.10 / 0.95))
-    assert sprt.llr_pass == pytest.approx(math.log(2.0 / 3.0))
-    assert sprt.llr_fail == pytest.approx(math.log(4.0))
-    assert sprt.threshold_a > 0
-    assert sprt.threshold_b < 0
+    check.almost_equal(sprt.threshold_a, math.log(0.90 / 0.05))
+    check.almost_equal(sprt.threshold_b, math.log(0.10 / 0.95))
+    check.almost_equal(sprt.llr_pass, math.log(2.0 / 3.0))
+    check.almost_equal(sprt.llr_fail, math.log(4.0))
+    check.greater(sprt.threshold_a, 0)
+    check.less(sprt.threshold_b, 0)
 
 
 def test_sprt_three_consecutive_fails_kills_at_step_three() -> None:
@@ -23,9 +24,9 @@ def test_sprt_three_consecutive_fails_kills_at_step_three() -> None:
     observations = [False, False, False]
     result = sprt.run_evaluator(iter(observations).__next__)
 
-    assert result.decision == Decision.KILLED
-    assert result.sample_count == 3
-    assert result.cumulative_llr >= sprt.threshold_a
+    check.equal(result.decision, Decision.KILLED)
+    check.equal(result.sample_count, 3)
+    check.greater_equal(result.cumulative_llr, sprt.threshold_a)
 
 
 def test_sprt_clean_passes_survives_at_step_six() -> None:
@@ -35,9 +36,9 @@ def test_sprt_clean_passes_survives_at_step_six() -> None:
     clean_passes = [True] * 10
     result = sprt.run_evaluator(iter(clean_passes).__next__)
 
-    assert result.decision == Decision.SURVIVED
-    assert result.sample_count == 6
-    assert result.cumulative_llr <= sprt.threshold_b
+    check.equal(result.decision, Decision.SURVIVED)
+    check.equal(result.sample_count, 6)
+    check.less_equal(result.cumulative_llr, sprt.threshold_b)
 
 
 def test_sprt_inconclusive_when_truncated() -> None:
