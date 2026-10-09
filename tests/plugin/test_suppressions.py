@@ -14,6 +14,12 @@ def test_load_suppressions_empty_when_file_missing(tmp_path: Path) -> None:
     assert load_suppressions(tmp_path) == set()
 
 
+@pytest.mark.parametrize("text", ["", "# no suppressions yet\n"])
+def test_load_suppressions_empty_file_suppresses_nothing(tmp_path: Path, text: str) -> None:
+    _write_suppressions(tmp_path, text)
+    assert load_suppressions(tmp_path) == set()
+
+
 def test_load_suppressions_toml_format(tmp_path: Path) -> None:
     _write_suppressions(
         tmp_path,
@@ -61,5 +67,5 @@ def test_malformed_suppressions_are_ignored_without_clastogen_flag(pytester: pyt
     pytester.runpytest().assert_outcomes(passed=1)
 
     result = pytester.runpytest("--clastogen")
-    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert result.ret == pytest.ExitCode.USAGE_ERROR, result.stdout.str()
     assert "must be a table" in result.stderr.str()

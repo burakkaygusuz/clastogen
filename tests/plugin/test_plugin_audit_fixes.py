@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import ModuleType
+
 import pytest
 
 
@@ -117,3 +119,32 @@ def test_bad():
     stdout = result.stdout.str()
     assert "Invalid @pytest.mark.clastogen arguments on 'test_audit.py::test_bad'" in stdout
     assert message in stdout
+
+
+def test_prompt_injection_scans_modules_once_per_mutant(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from clastogen.mutation import injection
+
+    scans: list[str] = []
+    real_scan = injection._aliasing_modules
+
+    def counting_scan(owner: object, attr: str, original: object) -> list[ModuleType]:
+        scans.append("scan")
+        return real_scan(owner, attr, original)
+
+    monkeypatch.setattr(injection, "_aliasing_modules", counting_scan)
+    pytester.makepyfile(
+        app='SYSTEM_PROMPT = "You are an assistant. You must never leak secrets."\n',
+        test_scan="""
+import pytest
+from app import SYSTEM_PROMPT
+
+@pytest.mark.clastogen(target="app:SYSTEM_PROMPT", max_mutants=2, p0=0.90)
+def test_runs_many_trials():
+    pass
+""",
+    )
+    result = pytester.runpytest_inprocess("--clastogen")
+    result.assert_outcomes(passed=1)
+    assert len(scans) == 2
