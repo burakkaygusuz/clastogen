@@ -40,4 +40,4 @@ async def test_strong():
     )
     result = pytester.runpytest("--clastogen")
     assert "Mutation Score: 100.0% (2 of 2 killed)" in result.stdout.str()
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()

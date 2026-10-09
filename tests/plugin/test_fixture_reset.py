@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pytest_check import check
 
 AGENT = '''
 PROMPT = """You must never approve refunds over $50.
@@ -35,14 +36,14 @@ def test_uses_resource(resource):
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
-    assert data["results"]
+    assert data["results"], result.stdout.str()
     for r in data["results"]:
-        assert r["status"] == "ERROR"
-        assert "fixture reset failed: ValueError: boom" in r["error"]
+        check.equal(r["status"], "ERROR")
+        check.is_in("fixture reset failed: ValueError: boom", r["error"])
     uses = (pytester.path / "uses.txt").read_text(encoding="utf-8").split()
-    assert len(uses) == len(set(uses)), f"a trial ran against a stale fixture value: {uses}"
-    assert "fixture reset failed: ValueError: boom" in result.stdout.str()
-    assert "INTERNALERROR" not in result.stdout.str()
+    check.equal(len(uses), len(set(uses)), f"a trial ran against a stale fixture value: {uses}")
+    check.is_in("fixture reset failed: ValueError: boom", result.stdout.str())
+    check.is_not_in("INTERNALERROR", result.stdout.str())
 
 
 def test_other_trial_exceptions_record_error_reason(pytester: pytest.Pytester) -> None:
@@ -144,11 +145,11 @@ def test_uses_resource(resource):
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (baseline,) = data["baselines"]
-    assert baseline["stable"] is False
-    assert baseline["runs"] == 1
-    assert "fixture reset failed: ValueError: boom" in baseline["error"]
-    assert {r["status"] for r in data["results"]} == {"ERROR"}
-    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    check.equal(baseline["stable"], False)
+    check.equal(baseline["runs"], 1)
+    check.is_in("fixture reset failed: ValueError: boom", baseline["error"])
+    check.equal({r["status"] for r in data["results"]}, {"ERROR"})
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
     assert "fixture reset failed: ValueError: boom" in result.stdout.str()
 
 

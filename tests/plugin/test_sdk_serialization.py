@@ -44,4 +44,4 @@ def test_weak():
     assert data["counts"]["SURVIVED"] == 0
     assert data["mutation_score"] == 100.0
     assert {r["test_id"].split("::")[-1] for r in data["results"]} == {"test_strong"}
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()

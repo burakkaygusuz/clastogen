@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pytest_check import check
 
 AGENT = '''
 PROMPT = """You must never approve refunds over $50.
@@ -23,15 +24,15 @@ def test_counted():
     )
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}", "-v")
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (baseline,) = data["baselines"]
-    assert baseline["runs"] == 10
-    assert baseline["successes"] == 10
-    assert baseline["p0"] == pytest.approx(11 / 12)
-    assert baseline["stable"] is True
-    assert "p0=0.917" in result.stdout.str()
+    check.equal(baseline["runs"], 10)
+    check.equal(baseline["successes"], 10)
+    check.almost_equal(baseline["p0"], 11 / 12)
+    check.equal(baseline["stable"], True)
+    check.is_in("p0=0.917", result.stdout.str())
 
 
 _BREAKS_ON_RERUN = """
@@ -68,7 +69,7 @@ def test_broken_baseline_is_rejected_with_reason(
 
     result.assert_outcomes(passed=1)
     # The baseline error lands on the unmeasured mutants: ERROR fails the run, SKIPPED does not.
-    assert result.ret == (pytest.ExitCode.TESTS_FAILED if mutant_error else pytest.ExitCode.OK)
+    assert result.ret == (pytest.ExitCode.TESTS_FAILED if mutant_error else pytest.ExitCode.OK), result.stdout.str()
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (baseline,) = data["baselines"]
     assert (baseline["stable"], baseline["runs"], baseline["error"]) == (False, 1, error)
@@ -98,7 +99,7 @@ def test_kills():
     result = pytester.runpytest("--clastogen", *files)
 
     # test_a kills every mutant whose baseline broke in test_b, whichever runs first.
-    assert result.ret == pytest.ExitCode.OK
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
     result.stdout.fnmatch_lines(["*Mutation Score: 100.0% (1 of 1 killed)*"])
 
 
@@ -106,7 +107,7 @@ def test_pytest_exit_during_baseline_stops_the_session(pytester: pytest.Pytester
     pytester.makepyfile(agent=AGENT, test_breaks=_BREAKS_ON_RERUN.format(action='pytest.exit("abort requested")'))
     result = pytester.runpytest("--clastogen")
 
-    assert result.ret == pytest.ExitCode.INTERRUPTED
+    assert result.ret == pytest.ExitCode.INTERRUPTED, result.stdout.str()
     assert "abort requested" in result.stdout.str()
 
 
