@@ -59,7 +59,6 @@ allow_zero_version = true
 major_on_zero = false
 commit_message = "chore(release): {version}"
 build_command = """
-    pip install uv==0.12.23
     uv lock --upgrade-package "$PACKAGE_NAME"
     git add uv.lock
     uv build
