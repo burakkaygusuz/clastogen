@@ -52,6 +52,9 @@ def test_parallel_workers_reach_the_same_verdicts_as_a_serial_run(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PYTHONPATH", str(SRC))
+    monkeypatch.setenv(
+        "PYTHONUTF8", "1"
+    )  # the report prints "…"; pytester decodes the output as UTF-8, Windows pipes use cp1252
     pytester.makepyfile(
         agent=AGENT,
         test_a_strong="""
