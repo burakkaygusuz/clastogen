@@ -75,7 +75,7 @@ def ask(question: str) -> str:
 
 ### Parallel runs (pytest-xdist)
 
-You can use `pytest --clastogen -n 4`. Each worker sends its records with the test report. The controller merges the records into one summary. Each process measures its own baselines and keeps its own list of killed mutants. Thus, a worker can run a mutant again after a different worker killed it. Parallel runs do more work in total, but they take less time.
+You can use `pytest --clastogen -n 4`. Each worker sends its records with the test report. The controller merges the records into one summary. Each process measures its own baselines and keeps its own list of killed mutants. Thus, a worker can run a mutant again after a different worker killed it. The verdicts and the Mutation Score do not change, but the `Calls` line counts these extra runs, so it is higher than in a serial run. Parallel runs do more work in total, but they take less time.
 
 ## Suppress mutants
 
