@@ -127,6 +127,8 @@ The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scena
 
 ### Savings against a fixed sample size
 
+Every run prints this comparison as the `Calls:` line (also in the Markdown summary, and as `calls` and `fixed_calls` in the JSON). `calls` sums the SPRT runs of every mutant evaluation, so a survivor counts once for each test that ran it. `fixed_calls` is the fixed N below, computed from the error rates and the $p_0$ of that run, summed over the same evaluations. The comparison is hypothetical: no fixed-N test is run. It leaves out baseline runs, which both approaches need, and it includes `INCONCLUSIVE` mutants at $N_{\max}$. The line reads `no saving` when the SPRT used as many calls or more.
+
 A fixed-N test with the same error rates ($\alpha = 0.05$, $\beta = 0.10$) is the smallest binomial test that fails at most $\alpha$ of the time at $p_0$ and passes at most $\beta$ of the time at $p_1$. The script computes it and compares it with the SPRT's mean calls:
 
 | Scenario                     | Fixed N (KILLED if passes $\le c$) | SPRT ASN at $p_0$ / $p_1$ | Saved         | `INCONCLUSIVE` at $p_0$ / $p_1$ |

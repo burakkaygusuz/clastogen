@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from clastogen.models import MutantExecution
-from clastogen.reporting.scoring import summarize
+from clastogen.models import MutantExecution, MutationSummary
+from clastogen.reporting.scoring import calls_line, summarize
 from clastogen.types import MutantStatus
 
 
@@ -72,6 +73,41 @@ def test_score_formula_counts_killed_survived_inconclusive_only() -> None:
 def test_score_is_none_without_measurable_mutants(status: MutantStatus) -> None:
     assert summarize([_exec("a", status)]).score is None
     assert summarize([]).score is None
+
+
+def test_calls_sum_every_execution_not_only_the_merged_one() -> None:
+    summary = summarize(
+        [
+            replace(_exec("m1", MutantStatus.SURVIVED, "t::a"), sample_count=6, fixed_n=18),
+            replace(_exec("m1", MutantStatus.SURVIVED, "t::b"), sample_count=6, fixed_n=18),
+            replace(_exec("m2", MutantStatus.KILLED), sample_count=2, fixed_n=18),
+        ]
+    )
+    assert (summary.total, summary.calls, summary.fixed_calls) == (2, 14, 54)
+
+
+def test_calls_ignore_executions_the_sprt_did_not_run() -> None:
+    summary = summarize(
+        [
+            replace(_exec("m1", MutantStatus.ERROR), sample_count=None, llr=None),
+            replace(_exec("m2", MutantStatus.KILLED), sample_count=4, fixed_n=None),
+        ]
+    )
+    assert (summary.calls, summary.fixed_calls) == (0, 0)
+    assert calls_line(summary) is None
+
+
+def test_calls_line_reports_the_saving_against_fixed_n() -> None:
+    summary = MutationSummary(results=(), counts={}, score=None, calls=30, fixed_calls=112)
+    assert calls_line(summary) == "Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)"
+
+
+@pytest.mark.parametrize("calls", [18, 25])
+def test_calls_line_admits_when_there_is_no_saving(calls: int) -> None:
+    summary = MutationSummary(results=(), counts={}, score=None, calls=calls, fixed_calls=18)
+    line = calls_line(summary)
+    assert line is not None
+    assert line.endswith("18: no saving)")
 
 
 executions = st.builds(
