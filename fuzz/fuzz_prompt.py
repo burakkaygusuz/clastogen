@@ -7,7 +7,7 @@ uv run --with atheris==3.1.0 python fuzz/fuzz_prompt.py -max_total_time=60
 import re
 import sys
 
-import atheris  # pyrefly: ignore[missing-source-for-stubs]
+import atheris
 
 with atheris.instrument_imports():
     from clastogen.mutation.mutator import PromptMutator
@@ -16,7 +16,7 @@ with atheris.instrument_imports():
 MUTATOR = PromptMutator()
 
 
-def TestOneInput(data: bytes) -> None:
+def test_one_input(data: bytes) -> None:
     fdp = atheris.FuzzedDataProvider(data)
     max_mutants = fdp.ConsumeIntInRange(1, 8)
     prompt = fdp.ConsumeUnicodeNoSurrogates(fdp.remaining_bytes())
@@ -34,5 +34,5 @@ def TestOneInput(data: bytes) -> None:
 
 
 if __name__ == "__main__":
-    atheris.Setup(sys.argv, TestOneInput)
+    atheris.Setup(sys.argv, test_one_input)
     atheris.Fuzz()
