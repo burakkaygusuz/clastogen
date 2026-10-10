@@ -4,6 +4,7 @@ import pytest
 from pytest_check import check
 
 from clastogen import SPRT, Decision, SPRTConfig
+from clastogen.stats.sprt import binom_cdf, fixed_sample_size
 
 
 def test_wald_thresholds_and_llr_increments_exact() -> None:
@@ -50,6 +51,30 @@ def test_sprt_inconclusive_when_truncated() -> None:
 
     assert result.decision == Decision.INCONCLUSIVE
     assert result.sample_count == 6
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        (SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60), (18, 13)),
+        (SPRTConfig(alpha=0.05, beta=0.10, p0=0.75, p1=0.50), (33, 20)),
+    ],
+)
+def test_fixed_sample_size_is_the_smallest_test_with_the_sprt_error_rates(
+    config: SPRTConfig, expected: tuple[int, int]
+) -> None:
+    n, c = fixed_sample_size(config)
+
+    check.equal((n, c), expected)
+    check.less_equal(binom_cdf(n, c, config.p0), config.alpha)
+    check.less_equal(1 - binom_cdf(n, c, config.p1), config.beta)
+    # One call fewer has no cutoff that satisfies both error rates.
+    check.is_false(
+        any(
+            binom_cdf(n - 1, k, config.p0) <= config.alpha and 1 - binom_cdf(n - 1, k, config.p1) <= config.beta
+            for k in range(n - 1)
+        )
+    )
 
 
 @pytest.mark.parametrize(("p0", "delta"), [(1.0, 0.25), (0.5, 0.6)])

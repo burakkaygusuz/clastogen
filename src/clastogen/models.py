@@ -44,7 +44,10 @@ class Mutant:
 
 @dataclass(frozen=True)
 class MutantExecution:
-    """Record of a single mutant evaluation by a test; sample_count and llr are None unless the SPRT ran."""
+    """Record of a single mutant evaluation by a test; sample_count, llr and fixed_n are None unless the SPRT ran.
+
+    fixed_n is the sample size of a fixed-N test with the same error rates (see fixed_sample_size).
+    """
 
     test_id: str
     target: str
@@ -57,6 +60,7 @@ class MutantExecution:
     sample_count: int | None = None
     llr: float | None = None
     error: str | None = None
+    fixed_n: int | None = None
 
 
 @dataclass(frozen=True)
@@ -74,11 +78,16 @@ class BaselineRecord:
 
 @dataclass(frozen=True)
 class MutationSummary:
-    """Order-independent aggregate of all mutant evaluations in a session."""
+    """Order-independent aggregate of all mutant evaluations in a session.
+
+    calls and fixed_calls sum sample_count and fixed_n over every sampled execution, not only the merged results.
+    """
 
     results: tuple[MutantExecution, ...]
     counts: dict[MutantStatus, int]
     score: float | None
+    calls: int = 0
+    fixed_calls: int = 0
 
     @property
     def total(self) -> int:

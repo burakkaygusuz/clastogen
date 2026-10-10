@@ -5,7 +5,7 @@ from html import escape
 from importlib.resources import files
 
 from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
-from clastogen.reporting.scoring import MEASURED, score_line
+from clastogen.reporting.scoring import MEASURED, calls_line, score_line
 from clastogen.stats.sprt import MIN_BASELINE_RATE
 from clastogen.types import MutantStatus
 
@@ -233,6 +233,8 @@ def render_markdown(
 ) -> str:
     """Renders a compact GitHub-flavored Markdown summary for job summaries and pull request comments."""
     lines = ["## Clastogen mutation testing", "", f"**{score_line(summary)}**"]
+    if calls := calls_line(summary):
+        lines += ["", calls]
     if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
     if summary.results:

@@ -10,7 +10,11 @@ MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.I
 def summarize(results: Iterable[MutantExecution]) -> MutationSummary:
     """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive)."""
     merged: dict[str, MutantExecution] = {}
+    calls = fixed_calls = 0
     for r in results:
+        if r.sample_count is not None and r.fixed_n is not None:
+            calls += r.sample_count
+            fixed_calls += r.fixed_n
         current = merged.get(r.mutant_id)
         if current is None or (_RANK[r.status], r.test_id) < (_RANK[current.status], current.test_id):
             merged[r.mutant_id] = r
@@ -22,7 +26,16 @@ def summarize(results: Iterable[MutantExecution]) -> MutationSummary:
 
     measurable = sum(counts[status] for status in MEASURED)
     score = counts[MutantStatus.KILLED] / measurable * 100.0 if measurable else None
-    return MutationSummary(results=unique, counts=counts, score=score)
+    return MutationSummary(results=unique, counts=counts, score=score, calls=calls, fixed_calls=fixed_calls)
+
+
+def calls_line(summary: MutationSummary) -> str | None:
+    """Returns the SPRT call count against a fixed-N test with the same error rates, or None when nothing was sampled."""
+    if not summary.fixed_calls:
+        return None
+    saved = (1 - summary.calls / summary.fixed_calls) * 100.0
+    outcome = f"{saved:.0f}% fewer" if saved > 0 else "no saving"
+    return f"Calls: {summary.calls} (a fixed-N test with the same error rates needs {summary.fixed_calls}: {outcome})"
 
 
 def score_line(summary: MutationSummary) -> str:

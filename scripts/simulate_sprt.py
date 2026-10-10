@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import random  # Seeded PRNG: the simulations must be reproducible, not unpredictable.
 import sys
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from clastogen import SPRT, Decision, SPRTConfig
 from clastogen.stats.assertions import compute_wilson_interval, evaluate_pass_rate
-from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, config_from_baseline
+from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, binom_cdf, config_from_baseline, fixed_sample_size
 
 FLOW_BASELINES = (0.70, 0.80, 0.90, 0.95, 0.99)
 FIXED_SIZES = (10, 20, 30, 50, 100)
@@ -150,28 +149,10 @@ def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 
-def _binom_cdf(n: int, c: int, p: float) -> float:
-    """Exact P(X <= c) for X ~ Binomial(n, p)."""
-    return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
-
-
 @cache
 def fixed_n_decision(passes: int, n: int, p0: float, alpha: float) -> bool:
     """One-sided exact binomial test: KILLED iff P(X <= passes | n, p0) <= alpha."""
-    return _binom_cdf(n, passes, p0) <= alpha
-
-
-def fixed_sample_size(config: SPRTConfig) -> tuple[int, int]:
-    """Smallest (n, c) of a one-sided binomial test with the SPRT's error rates: KILLED if passes <= c.
-
-    Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta.
-    """
-    n = 1
-    while True:
-        for c in range(n + 1):
-            if _binom_cdf(n, c, config.p0) <= config.alpha and 1 - _binom_cdf(n, c, config.p1) <= config.beta:
-                return n, c
-        n += 1
+    return binom_cdf(n, passes, p0) <= alpha
 
 
 def format_simulation_report(title: str, config: SPRTConfig, stats_list: list[SimulationStats]) -> str:

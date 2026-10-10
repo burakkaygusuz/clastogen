@@ -24,8 +24,15 @@ from clastogen.models import (
 from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.reporting.render import STATUS_LABELS, render_html, render_markdown
-from clastogen.reporting.scoring import score_line, summarize
-from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, SPRT, config_from_baseline, estimate_p0
+from clastogen.reporting.scoring import calls_line, score_line, summarize
+from clastogen.stats.sprt import (
+    BASELINE_RUNS,
+    MIN_BASELINE_RATE,
+    SPRT,
+    config_from_baseline,
+    estimate_p0,
+    fixed_sample_size,
+)
 from clastogen.types import MutantStatus, RecordsPayload
 
 logger = logging.getLogger(__name__)
@@ -181,6 +188,7 @@ class _RecordCollector:
                     sample_count=r["sample_count"],
                     llr=r["llr"],
                     error=r["error"],
+                    fixed_n=r["fixed_n"],
                 )
                 for r in records["results"]
             )
@@ -273,6 +281,7 @@ def _execution(
     sample_count: int | None = None,
     llr: float | None = None,
     error: str | None = None,
+    fixed_n: int | None = None,
 ) -> MutantExecution:
     return MutantExecution(
         test_id=item.nodeid,
@@ -286,6 +295,7 @@ def _execution(
         sample_count=sample_count,
         llr=llr,
         error=error,
+        fixed_n=fixed_n,
     )
 
 
@@ -315,7 +325,9 @@ def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExe
         res.cumulative_llr,
         item.nodeid,
     )
-    return _execution(item, mutant, status, res.sample_count, res.cumulative_llr)
+    return _execution(
+        item, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed_sample_size(sprt.config)[0]
+    )
 
 
 def _run_mutation(
@@ -416,6 +428,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             "mutation_score": summary.score,
             "total_mutants": summary.total,
             "counts": {status.value: n for status, n in summary.counts.items()},
+            "calls": summary.calls,
+            "fixed_calls": summary.fixed_calls,
             "results": [asdict(r) for r in summary.results],
             "executions": [asdict(r) for r in state.results],
             "baselines": [asdict(b) for b in state.baselines],
@@ -546,6 +560,8 @@ def _write_summary(
     else:
         ok = not _fail_under_failed(summary, fail_under)
     terminalreporter.write_line(score_line(summary), bold=True, green=ok is True, red=ok is False)
+    if calls := calls_line(summary):
+        terminalreporter.write_line(calls, light=True)
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config) -> None:

@@ -2,6 +2,7 @@ import inspect
 import logging
 import math
 from collections.abc import Callable, Sequence
+from functools import cache
 
 from clastogen.models import SPRTConfig, SPRTResult
 from clastogen.types import Decision
@@ -25,6 +26,31 @@ def check_outcome(raw: object) -> bool:
 def estimate_p0(outcomes: Sequence[bool]) -> float:
     """Estimates the baseline pass probability with Laplace's rule of succession, (s + 1) / (n + 2)."""
     return (sum(outcomes) + 1) / (len(outcomes) + 2)
+
+
+def binom_cdf(n: int, c: int, p: float) -> float:
+    """Exact P(X <= c) for X ~ Binomial(n, p)."""
+    return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
+
+
+@cache
+def fixed_sample_size(config: SPRTConfig) -> tuple[int, int]:
+    """Smallest (n, c) of a one-sided binomial test with the SPRT's error rates: KILLED if passes <= c.
+
+    Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta. Only c <= the largest alpha-feasible
+    cutoff is allowed and a larger c only helps beta, so each n costs one pass; c is then the smallest feasible.
+    """
+    n = 1
+    while True:
+        cutoff, cum = None, 0.0
+        for c in range(n):
+            cum += math.comb(n, c) * config.p0**c * (1 - config.p0) ** (n - c)
+            if cum > config.alpha:
+                break
+            cutoff = c
+        if cutoff is not None and 1 - binom_cdf(n, cutoff, config.p1) <= config.beta:
+            return n, next(c for c in range(cutoff + 1) if 1 - binom_cdf(n, c, config.p1) <= config.beta)
+        n += 1
 
 
 def config_from_baseline(

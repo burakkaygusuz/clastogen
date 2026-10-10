@@ -204,3 +204,18 @@ def test_errors_under_mutation():
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50")
     assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
     result.stdout.fnmatch_lines(["*Mutation Score: 100.0%*", "*Clastogen: 1 mutant error(s)*"])
+
+
+def test_calls_line_and_json_count_every_execution(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_calls="import pytest, agent\n" + _UNRELATED + _STRONG)
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    sampled = [e for e in data["executions"] if e["sample_count"] is not None]
+    check.equal(data["calls"], sum(e["sample_count"] for e in sampled))
+    check.equal(data["fixed_calls"], sum(e["fixed_n"] for e in sampled))
+    check.less(data["calls"], data["fixed_calls"])
+    check.is_in(
+        f"Calls: {data['calls']} (a fixed-N test with the same error rates needs {data['fixed_calls']}:",
+        result.stdout.str(),
+    )
