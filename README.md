@@ -42,7 +42,7 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 3. It runs your marked tests with each mutant. If a test fails, the mutant is **killed**. If all tests pass, the mutant **survived**: that is a blind spot.
 4. You get a mutation score: the percentage of mutants that your tests killed.
 
-LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
+LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates, and the simulated average saving is 48–56%. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
 
 ## Works with your existing evals
 
@@ -127,7 +127,10 @@ The terminal output:
 --------------------------------------------------------------------------------
 2 survived: your tests still pass with these prompt faults.
 Mutation Score: 60.0% (3 of 5 killed)
+Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
 ```
+
+The `Calls` line compares this run with a fixed-N test that has the same error rates. Here the mock agent gives clean kills, so the saving is large. [Simulated averages](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md#savings-against-a-fixed-sample-size) are 48–56%.
 
 The same results go to `reports/report.html`:
 
@@ -167,6 +170,7 @@ The pytest `--junitxml` file also contains the Clastogen records of each marked 
 
 - [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, known limitations.
 - [Statistics](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md): statistical assertions API (`assert_pass_rate`, `assert_no_regression`), SPRT simulations and guarantees.
+- [Benchmark](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/README.md): a weak and a strong eval suite against 10 prompt mutants on a real model, 20 runs each, with the stability of the verdicts and the measured call savings.
 - [Agent skill](https://github.com/burakkaygusuz/clastogen/blob/main/skills/clastogen/SKILL.md): lets a coding agent (Claude Code, Codex, Cursor) mark your evals, run Clastogen and fix the survivors. Copy `skills/clastogen/` into your agent's skills directory.
 - [Contributing](https://github.com/burakkaygusuz/clastogen/blob/main/CONTRIBUTING.md)
 
