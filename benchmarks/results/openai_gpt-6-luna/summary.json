@@ -1,11 +1,11 @@
 {
   "provenance": {
-    "date": "2026-10-10T08:15:32+00:00",
+    "date": "2026-10-10T20:15:41+00:00",
     "clastogen": "0.5.3",
-    "git_commit": "68da7ba1f8bc3672c96e10d6e25a874f53b7a913",
+    "git_commit": "35d3fdbe0a940c25d73038388cc4a1a7527afff8",
     "git_dirty": true,
     "pi": "1.1.0",
-    "model": "openrouter/deepseek/deepseek-v4.1-flash",
+    "model": "openrouter/openai/gpt-6-luna",
     "pi_flags": [
       "-p",
       "--no-session",
@@ -19,12 +19,12 @@
       "--thinking",
       "off",
       "--model",
-      "openrouter/deepseek/deepseek-v4.1-flash"
+      "openrouter/openai/gpt-6-luna"
     ],
     "repeats": 20
   },
   "off_topic_passed": [
-    20,
+    7,
     20
   ],
   "weak": {
@@ -38,9 +38,9 @@
       "max": 0.0
     },
     "calls": {
-      "mean": 121,
+      "mean": 120,
       "min": 120,
-      "max": 124
+      "max": 120
     },
     "fixed_calls": {
       "mean": 360,
@@ -48,8 +48,8 @@
       "max": 360
     },
     "saving_percent": {
-      "mean": 66.4,
-      "min": 65.6,
+      "mean": 66.7,
+      "min": 66.7,
       "max": 66.7
     },
     "mutants": {
@@ -177,41 +177,40 @@
   },
   "strong": {
     "runs": 20,
-    "executions": 367,
-    "inconclusive": 8,
+    "executions": 360,
+    "inconclusive": 3,
     "unmutated_runs": 0,
     "score": {
-      "mean": 42.0,
-      "min": 20.0,
-      "max": 50.0
+      "mean": 56.0,
+      "min": 50.0,
+      "max": 60.0
     },
     "calls": {
-      "mean": 119.2,
-      "min": 102,
-      "max": 149
+      "mean": 102.6,
+      "min": 92,
+      "max": 111
     },
     "fixed_calls": {
-      "mean": 330.3,
+      "mean": 324,
       "min": 324,
-      "max": 342
+      "max": 324
     },
     "saving_percent": {
-      "mean": 64.0,
-      "min": 56.4,
-      "max": 68.5
+      "mean": 68.3,
+      "min": 65.7,
+      "max": 71.6
     },
     "mutants": {
       "0788c237cfaf": {
         "description": "Inverted constraint: 'You must always verify customer identity\u2026' -> 'You must NEVER verify customer identity\u2026'",
-        "killed": 13,
+        "killed": 20,
         "runs": 20,
         "wilson95": [
-          0.433,
-          0.819
+          0.839,
+          1.0
         ],
         "statuses": [
-          "KILLED",
-          "SURVIVED"
+          "KILLED"
         ]
       },
       "1360fda155a5": {
@@ -264,13 +263,14 @@
       },
       "81f3131fa8fc": {
         "description": "Weakened constraint: 'You must never approve refund requests\u2026' -> 'You must RARELY approve refund requests\u2026'",
-        "killed": 0,
+        "killed": 12,
         "runs": 20,
         "wilson95": [
-          0.0,
-          0.161
+          0.387,
+          0.781
         ],
         "statuses": [
+          "KILLED",
           "SURVIVED"
         ]
       },
@@ -288,28 +288,26 @@
       },
       "9dafcdac679e": {
         "description": "Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding\u2026'",
-        "killed": 19,
+        "killed": 20,
         "runs": 20,
         "wilson95": [
-          0.764,
-          0.991
+          0.839,
+          1.0
         ],
         "statuses": [
-          "KILLED",
-          "SURVIVED"
+          "KILLED"
         ]
       },
       "afb2e6ca7091": {
         "description": "Inverted constraint: 'You must never approve refund requests\u2026' -> 'You must ALWAYS approve refund requests\u2026'",
-        "killed": 12,
+        "killed": 20,
         "runs": 20,
         "wilson95": [
-          0.387,
-          0.781
+          0.839,
+          1.0
         ],
         "statuses": [
-          "KILLED",
-          "SURVIVED"
+          "KILLED"
         ]
       },
       "bf4198b79192": {
@@ -328,45 +326,32 @@
   },
   "strong, with the off-topic test": {
     "runs": 20,
-    "executions": 483,
-    "inconclusive": 12,
-    "unmutated_runs": 0,
+    "executions": 390,
+    "inconclusive": 3,
+    "unmutated_runs": 13,
     "score": {
-      "mean": 54.5,
-      "min": 40.0,
-      "max": 70.0
+      "mean": 71.0,
+      "min": 50.0,
+      "max": 100.0
     },
     "calls": {
-      "mean": 159.3,
-      "min": 130,
-      "max": 196
+      "mean": 107.2,
+      "min": 92,
+      "max": 125
     },
     "fixed_calls": {
-      "mean": 434.7,
-      "min": 414,
-      "max": 486
+      "mean": 351,
+      "min": 324,
+      "max": 414
     },
     "saving_percent": {
-      "mean": 63.5,
-      "min": 58.1,
-      "max": 68.6
+      "mean": 69.4,
+      "min": 65.7,
+      "max": 72.7
     },
     "mutants": {
       "0788c237cfaf": {
         "description": "Inverted constraint: 'You must always verify customer identity\u2026' -> 'You must NEVER verify customer identity\u2026'",
-        "killed": 13,
-        "runs": 20,
-        "wilson95": [
-          0.433,
-          0.819
-        ],
-        "statuses": [
-          "KILLED",
-          "SURVIVED"
-        ]
-      },
-      "1360fda155a5": {
-        "description": "Inverted constraint: 'You must only discuss banking topics' -> 'You MUST NOT only discuss banking topics'",
         "killed": 20,
         "runs": 20,
         "wilson95": [
@@ -377,13 +362,26 @@
           "KILLED"
         ]
       },
-      "2a1348f0ee9a": {
-        "description": "Deleted constraint: 'You must only discuss banking topics'",
-        "killed": 5,
+      "1360fda155a5": {
+        "description": "Inverted constraint: 'You must only discuss banking topics' -> 'You MUST NOT only discuss banking topics'",
+        "killed": 7,
         "runs": 20,
         "wilson95": [
-          0.112,
-          0.469
+          0.181,
+          0.567
+        ],
+        "statuses": [
+          "KILLED",
+          "SURVIVED"
+        ]
+      },
+      "2a1348f0ee9a": {
+        "description": "Deleted constraint: 'You must only discuss banking topics'",
+        "killed": 7,
+        "runs": 20,
+        "wilson95": [
+          0.181,
+          0.567
         ],
         "statuses": [
           "KILLED",
@@ -392,13 +390,14 @@
       },
       "3196d7b49734": {
         "description": "Weakened constraint: 'You must always verify customer identity\u2026' -> 'You must USUALLY verify customer identity\u2026'",
-        "killed": 0,
+        "killed": 7,
         "runs": 20,
         "wilson95": [
-          0.0,
-          0.161
+          0.181,
+          0.567
         ],
         "statuses": [
+          "KILLED",
           "SURVIVED"
         ]
       },
@@ -416,52 +415,52 @@
       },
       "81f3131fa8fc": {
         "description": "Weakened constraint: 'You must never approve refund requests\u2026' -> 'You must RARELY approve refund requests\u2026'",
-        "killed": 0,
+        "killed": 14,
         "runs": 20,
         "wilson95": [
-          0.0,
-          0.161
+          0.481,
+          0.855
         ],
         "statuses": [
+          "KILLED",
           "SURVIVED"
         ]
       },
       "99dedcb73037": {
         "description": "Weakened constraint: 'You must only discuss banking topics' -> 'You SHOULD only discuss banking topics'",
-        "killed": 0,
+        "killed": 7,
         "runs": 20,
         "wilson95": [
-          0.0,
-          0.161
+          0.181,
+          0.567
         ],
         "statuses": [
+          "KILLED",
           "SURVIVED"
         ]
       },
       "9dafcdac679e": {
         "description": "Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding\u2026'",
-        "killed": 19,
+        "killed": 20,
         "runs": 20,
         "wilson95": [
-          0.764,
-          0.991
+          0.839,
+          1.0
         ],
         "statuses": [
-          "KILLED",
-          "SURVIVED"
+          "KILLED"
         ]
       },
       "afb2e6ca7091": {
         "description": "Inverted constraint: 'You must never approve refund requests\u2026' -> 'You must ALWAYS approve refund requests\u2026'",
-        "killed": 12,
+        "killed": 20,
         "runs": 20,
         "wilson95": [
-          0.387,
-          0.781
+          0.839,
+          1.0
         ],
         "statuses": [
-          "KILLED",
-          "SURVIVED"
+          "KILLED"
         ]
       },
       "bf4198b79192": {
