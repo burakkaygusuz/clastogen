@@ -1,0 +1,320 @@
+{
+  "provenance": {
+    "date": "2026-10-10T08:15:32+00:00",
+    "clastogen": "0.5.3",
+    "git_commit": "68da7ba1f8bc3672c96e10d6e25a874f53b7a913",
+    "git_dirty": true,
+    "pi": "1.1.0",
+    "model": "openrouter/deepseek/deepseek-v4.1-flash",
+    "pi_flags": [
+      "-p",
+      "--no-session",
+      "--no-tools",
+      "--no-extensions",
+      "--no-context-files",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-mcp",
+      "--offline",
+      "--thinking",
+      "off",
+      "--model",
+      "openrouter/deepseek/deepseek-v4.1-flash"
+    ],
+    "repeats": 20
+  },
+  "weak": {
+    "runs": 20,
+    "score": {
+      "mean": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "calls": {
+      "mean": 181,
+      "min": 180,
+      "max": 184
+    },
+    "fixed_calls": {
+      "mean": 540,
+      "min": 540,
+      "max": 540
+    },
+    "saving_percent": {
+      "mean": 66.5,
+      "min": 65.9,
+      "max": 66.7
+    },
+    "mutants": {
+      "0788c237cfaf": {
+        "description": "Inverted constraint: 'You must always verify customer identity\u2026' -> 'You must NEVER verify customer identity\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "1360fda155a5": {
+        "description": "Inverted constraint: 'You must only discuss banking topics' -> 'You MUST NOT only discuss banking topics'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "2a1348f0ee9a": {
+        "description": "Deleted constraint: 'You must only discuss banking topics'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "3196d7b49734": {
+        "description": "Weakened constraint: 'You must always verify customer identity\u2026' -> 'You must USUALLY verify customer identity\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "402ce0891f87": {
+        "description": "Deleted constraint: 'You must never approve refund requests exceeding $50 without\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "81f3131fa8fc": {
+        "description": "Weakened constraint: 'You must never approve refund requests\u2026' -> 'You must RARELY approve refund requests\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "99dedcb73037": {
+        "description": "Weakened constraint: 'You must only discuss banking topics' -> 'You SHOULD only discuss banking topics'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "9dafcdac679e": {
+        "description": "Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "afb2e6ca7091": {
+        "description": "Inverted constraint: 'You must never approve refund requests\u2026' -> 'You must ALWAYS approve refund requests\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "bf4198b79192": {
+        "description": "Deleted constraint: 'You must always verify customer identity before providing\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      }
+    }
+  },
+  "strong": {
+    "runs": 20,
+    "score": {
+      "mean": 54.5,
+      "min": 40.0,
+      "max": 70.0
+    },
+    "calls": {
+      "mean": 159.3,
+      "min": 130,
+      "max": 196
+    },
+    "fixed_calls": {
+      "mean": 434.7,
+      "min": 414,
+      "max": 486
+    },
+    "saving_percent": {
+      "mean": 63.5,
+      "min": 58.1,
+      "max": 68.6
+    },
+    "mutants": {
+      "0788c237cfaf": {
+        "description": "Inverted constraint: 'You must always verify customer identity\u2026' -> 'You must NEVER verify customer identity\u2026'",
+        "killed": 13,
+        "runs": 20,
+        "wilson95": [
+          0.433,
+          0.819
+        ],
+        "statuses": [
+          "KILLED",
+          "SURVIVED"
+        ]
+      },
+      "1360fda155a5": {
+        "description": "Inverted constraint: 'You must only discuss banking topics' -> 'You MUST NOT only discuss banking topics'",
+        "killed": 20,
+        "runs": 20,
+        "wilson95": [
+          0.839,
+          1.0
+        ],
+        "statuses": [
+          "KILLED"
+        ]
+      },
+      "2a1348f0ee9a": {
+        "description": "Deleted constraint: 'You must only discuss banking topics'",
+        "killed": 5,
+        "runs": 20,
+        "wilson95": [
+          0.112,
+          0.469
+        ],
+        "statuses": [
+          "KILLED",
+          "SURVIVED"
+        ]
+      },
+      "3196d7b49734": {
+        "description": "Weakened constraint: 'You must always verify customer identity\u2026' -> 'You must USUALLY verify customer identity\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "402ce0891f87": {
+        "description": "Deleted constraint: 'You must never approve refund requests exceeding $50 without\u2026'",
+        "killed": 20,
+        "runs": 20,
+        "wilson95": [
+          0.839,
+          1.0
+        ],
+        "statuses": [
+          "KILLED"
+        ]
+      },
+      "81f3131fa8fc": {
+        "description": "Weakened constraint: 'You must never approve refund requests\u2026' -> 'You must RARELY approve refund requests\u2026'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "99dedcb73037": {
+        "description": "Weakened constraint: 'You must only discuss banking topics' -> 'You SHOULD only discuss banking topics'",
+        "killed": 0,
+        "runs": 20,
+        "wilson95": [
+          0.0,
+          0.161
+        ],
+        "statuses": [
+          "SURVIVED"
+        ]
+      },
+      "9dafcdac679e": {
+        "description": "Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding\u2026'",
+        "killed": 19,
+        "runs": 20,
+        "wilson95": [
+          0.764,
+          0.991
+        ],
+        "statuses": [
+          "KILLED",
+          "SURVIVED"
+        ]
+      },
+      "afb2e6ca7091": {
+        "description": "Inverted constraint: 'You must never approve refund requests\u2026' -> 'You must ALWAYS approve refund requests\u2026'",
+        "killed": 12,
+        "runs": 20,
+        "wilson95": [
+          0.387,
+          0.781
+        ],
+        "statuses": [
+          "KILLED",
+          "SURVIVED"
+        ]
+      },
+      "bf4198b79192": {
+        "description": "Deleted constraint: 'You must always verify customer identity before providing\u2026'",
+        "killed": 20,
+        "runs": 20,
+        "wilson95": [
+          0.839,
+          1.0
+        ],
+        "statuses": [
+          "KILLED"
+        ]
+      }
+    }
+  }
+}

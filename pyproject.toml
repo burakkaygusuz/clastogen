@@ -103,6 +103,7 @@ ignore = [
 "scripts/*" = ["S101", "S311"]
 "examples/*" = ["S101", "S311"]
 "fuzz/*" = ["S101"]
+"benchmarks/*" = ["S101", "S603", "S607"]
 
 [tool.ty.analysis]
 # Optional: the DeepEval example skips without deepeval; atheris is Linux-only.
