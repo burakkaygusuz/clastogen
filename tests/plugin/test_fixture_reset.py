@@ -111,6 +111,7 @@ import pytest, agent
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_uses_tmp(tmp_path):
     assert "never approve refunds over $50." in agent.PROMPT
+    assert "must always verify identity" in agent.PROMPT
 """,
     )
     json_out = pytester.path / "out.json"
