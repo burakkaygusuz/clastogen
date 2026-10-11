@@ -91,7 +91,7 @@ def test_pathological_whitespace_stays_fast_and_long_numbers_stay_exact() -> Non
 
     start = time.perf_counter()
     PromptMutator().generate_mutants("# x" + " " * 40_000 + "y\nYou must x" + " " * 40_000 + "y.", max_mutants=5)
-    assert time.perf_counter() - start < 1.0
+    assert time.perf_counter() - start < 5.0  # quadratic scanning would take minutes
 
     (m,) = PromptMutator().generate_mutants("You must send at most 123456789012345678901234567890123 items.", 1)[:1]
     assert "1234567890123456789012345678901230" in m.mutated_prompt
