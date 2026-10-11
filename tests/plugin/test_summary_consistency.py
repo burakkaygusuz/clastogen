@@ -236,5 +236,8 @@ def test_untested_constraint_is_reported_in_terminal_and_json(pytester: pytest.P
     cov = json.loads(json_out.read_text(encoding="utf-8"))["constraint_coverage"]
     check.equal((cov["total"], cov["killed"], len(cov["untested"])), (2, 1, 1))
     check.equal(cov["untested"], ["You must always verify identity before sharing balances."])
-    check.is_in("Constraint Coverage: 1 of 2 constraints killed (50.0%); 0 survived, 1 untested", result.stdout.str())
+    check.is_in(
+        "Constraint Coverage: 1 of 2 constraints killed (50.0%); 0 survived or inconclusive, 1 untested",
+        result.stdout.str(),
+    )
     check.is_in("By operator: ", result.stdout.str())

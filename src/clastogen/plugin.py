@@ -13,6 +13,7 @@ from _pytest.tmpdir import tmppath_result_key
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
+    NOISY_BASELINE_RATE,
     BaselineRecord,
     ClastogenParams,
     ClastogenPluginState,
@@ -451,7 +452,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             },
             "results": [asdict(r) for r in summary.results],
             "executions": [asdict(r) for r in state.results],
-            "baselines": [asdict(b) for b in state.baselines],
+            "baselines": [{**asdict(b), "noisy": b.noisy} for b in state.baselines],
         }
         _write_report(json_path, json.dumps(out_dict, indent=2))
 
@@ -506,6 +507,12 @@ def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[
             )
     else:
         terminalreporter.write_sep("-")
+    if noisy := [b for b in stable if b.noisy]:
+        terminalreporter.write_line(
+            f"Noisy baselines (pass rate < {NOISY_BASELINE_RATE:.0%}): false KILLs can exceed alpha for "
+            + ", ".join(b.test_id for b in noisy),
+            yellow=True,
+        )
     if not stable:
         return
     if verbose:
@@ -587,7 +594,9 @@ def _write_summary(
         terminalreporter.write_line(line, bold=True)
     if summary.untested:
         shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
-        terminalreporter.write_line("Untested constraints (raise max_mutants or add tests):", yellow=True)
+        terminalreporter.write_line(
+            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
+        )
         for rule in shown:
             terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
         if len(shown) < len(summary.untested):

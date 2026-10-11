@@ -79,7 +79,7 @@ def coverage_line(summary: MutationSummary) -> str | None:
     untested = len(summary.untested)
     return (
         f"Constraint Coverage: {summary.constraints_killed} of {summary.constraints_total} constraints killed "
-        f"({summary.coverage:.1f}%); {summary.constraints_survived} survived, {untested} untested"
+        f"({summary.coverage:.1f}%); {summary.constraints_survived} survived or inconclusive, {untested} untested"
     )
 
 

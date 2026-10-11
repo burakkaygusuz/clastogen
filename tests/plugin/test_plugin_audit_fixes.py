@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import ModuleType
 
 import pytest
@@ -148,3 +149,32 @@ def test_runs_many_trials():
     result = pytester.runpytest_inprocess("--clastogen")
     result.assert_outcomes(passed=1)
     assert len(scans) == 2
+
+
+@pytest.mark.parametrize(("failing_calls", "warned"), [((2, 3), True), ((2,), False)])
+def test_noisy_baseline_is_flagged_below_ninety_percent(
+    pytester: pytest.Pytester, failing_calls: tuple[int, ...], warned: bool
+) -> None:
+    pytester.makepyfile(
+        app='SYSTEM_PROMPT = "You are an assistant. You must never leak secrets."',
+        test_noisy=f"""
+import pytest
+
+call_count = 0
+
+@pytest.mark.clastogen(target="app:SYSTEM_PROMPT", max_mutants=1)
+def test_noisy():
+    global call_count
+    call_count += 1
+    assert call_count not in {failing_calls}
+""",
+    )
+    json_out, md_out = pytester.path / "out.json", pytester.path / "out.md"
+    stdout = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}", f"--clastogen-md={md_out}").stdout.str()
+    assert (
+        "Noisy baselines (pass rate < 90%): false KILLs can exceed alpha for test_noisy.py::test_noisy" in stdout
+    ) is warned
+    assert [b["noisy"] for b in json.loads(json_out.read_text(encoding="utf-8"))["baselines"]] == [warned]
+    assert (
+        "Noisy baselines (false KILLs can exceed alpha): ` test_noisy `" in md_out.read_text(encoding="utf-8")
+    ) is warned

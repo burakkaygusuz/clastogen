@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 
 from clastogen.types import Decision, MutantStatus
 
+# Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
+NOISY_BASELINE_RATE = 0.90
+
 
 @dataclass(frozen=True)
 class Mutant:
@@ -74,6 +77,11 @@ class BaselineRecord:
     p0: float
     stable: bool
     error: str | None = None
+
+    @property
+    def noisy(self) -> bool:
+        """True for a stable baseline below NOISY_BASELINE_RATE, where false KILLs can exceed alpha."""
+        return self.stable and self.successes / self.runs < NOISY_BASELINE_RATE
 
 
 @dataclass(frozen=True)

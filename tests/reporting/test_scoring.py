@@ -150,5 +150,7 @@ def test_operator_rates_and_constraint_coverage() -> None:
     assert operator_rates(summary) == {"delete_constraint": (0, 2), "weaken_modal": (1, 1)}
     assert operator_line(summary) == "By operator: delete_constraint 0/2 (0%), weaken_modal 1/1 (100%)"
     assert (summary.constraints_killed, summary.constraints_survived, summary.untested) == (1, 1, ("r3", "r4"))
-    assert coverage_line(summary) == ("Constraint Coverage: 1 of 4 constraints killed (25.0%); 1 survived, 2 untested")
+    assert coverage_line(summary) == (
+        "Constraint Coverage: 1 of 4 constraints killed (25.0%); 1 survived or inconclusive, 2 untested"
+    )
     assert coverage_line(summarize([])) is None

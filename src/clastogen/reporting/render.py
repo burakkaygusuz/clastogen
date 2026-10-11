@@ -185,6 +185,8 @@ def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
     def badge(b: BaselineRecord) -> str:
         if b.error:
             return _badge("ERROR", "var(--error)")
+        if b.noisy:
+            return _badge("NOISY", "var(--inconclusive)")
         return _badge("STABLE", "var(--killed)") if b.stable else _badge("FLAKY", "var(--survived)")
 
     rows = "".join(
@@ -254,6 +256,8 @@ def render_markdown(
         lines += ["", "Untested constraints:", "", *(f"- {_code(rule)}" for rule in summary.untested)]
     if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
+    if noisy := [b.test_id.split("::")[-1] for b in baselines if b.noisy]:
+        lines += ["", f"Noisy baselines (false KILLs can exceed alpha): {', '.join(map(_code, noisy))}"]
     if summary.results:
         passed_in = _survivor_tests(executions)
         lines += ["", "| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]

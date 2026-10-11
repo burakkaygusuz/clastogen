@@ -32,7 +32,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
    python -c "import json; d = json.load(open('clastogen.json')); print(d['mutation_score'], d['counts'], d['by_operator'], d['constraint_coverage']); [print(r['mutant_id'], r['status'], r['operator_name'], '|', r['original_snippet'], '->', r['mutated_snippet']) for r in d['results'] if r['status'] in ('SURVIVED', 'INCONCLUSIVE', 'ERROR')]"
    ```
 9. For each survivor, add an assertion. Refer to the section "Kill a survivor".
-10. If `constraint_coverage.untested` is not empty, no mutant reached these rules. Refer to the section "Untested constraints".
+10. If `constraint_coverage.untested` is not empty, no measured mutant covers these rules. Refer to the section "Untested constraints".
 11. Do steps 7 to 10 again. Stop when no `SURVIVED` mutant remains, or when the user accepts the other survivors.
 12. Tell the user these items:
     - The mutation score and the constraint coverage before and after the changes.
@@ -84,9 +84,9 @@ Other statuses:
 `constraint_coverage` counts the rules that at least one mutant killed. It does not show which test killed them. A rule in `untested` has no mutant that the run measured. Common causes:
 
 - The prompt has more rules than `max_mutants` (default 5). Clastogen makes a mutant for evenly spaced rules only. Increase `max_mutants` on the marker to the number of rules. Each extra mutant costs up to `max_steps` runs. Ask the user first.
-- The run for the mutant ended with `ERROR` or `SKIPPED`.
+- The run for the mutant ended with `ERROR` or `SKIPPED`, or you suppressed the mutant (`SUPPRESSED`).
 
-A rule in the `survived` count has measured mutants, and none of them died. Kill them as in the section "Kill a survivor".
+A rule in the `survived` count has measured mutants (`SURVIVED` or `INCONCLUSIVE`), and none of them died. Kill them as in the section "Kill a survivor". A killed `delete_section` mutant does not count for the rules inside the section.
 
 ## Suppress only equivalent mutants
 
