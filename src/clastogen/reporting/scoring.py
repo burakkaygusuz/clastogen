@@ -7,8 +7,12 @@ _RANK = {status: rank for rank, status in enumerate(MutantStatus)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
 
 
-def summarize(results: Iterable[MutantExecution]) -> MutationSummary:
-    """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive)."""
+def summarize(results: Iterable[MutantExecution], constraints: Iterable[tuple[str, str]] = ()) -> MutationSummary:
+    """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
+
+    constraints are the (target, rule) pairs extracted from the prompts; each is killed, survived (measured, never
+    killed) or untested (no mutant measured), whatever the score says.
+    """
     merged: dict[str, MutantExecution] = {}
     calls = fixed_calls = 0
     for r in results:
@@ -26,7 +30,57 @@ def summarize(results: Iterable[MutantExecution]) -> MutationSummary:
 
     measurable = sum(counts[status] for status in MEASURED)
     score = counts[MutantStatus.KILLED] / measurable * 100.0 if measurable else None
-    return MutationSummary(results=unique, counts=counts, score=score, calls=calls, fixed_calls=fixed_calls)
+
+    killed_keys = {(r.target, r.original_snippet) for r in unique if r.status == MutantStatus.KILLED}
+    measured_keys = {(r.target, r.original_snippet) for r in unique if r.status in MEASURED}
+    killed = survived = 0
+    untested: list[str] = []
+    for key in sorted(set(constraints)):
+        if key in killed_keys:
+            killed += 1
+        elif key in measured_keys:
+            survived += 1
+        else:
+            untested.append(key[1])
+    return MutationSummary(
+        results=unique,
+        counts=counts,
+        score=score,
+        calls=calls,
+        fixed_calls=fixed_calls,
+        constraints_killed=killed,
+        constraints_survived=survived,
+        untested=tuple(untested),
+    )
+
+
+def operator_rates(summary: MutationSummary) -> dict[str, tuple[int, int]]:
+    """Maps each operator to (killed, measured) over the merged results, with the score's denominator."""
+    rates: dict[str, tuple[int, int]] = {}
+    for r in summary.results:
+        if r.status in MEASURED:
+            killed, measured = rates.get(r.operator_name, (0, 0))
+            rates[r.operator_name] = (killed + (r.status == MutantStatus.KILLED), measured + 1)
+    return dict(sorted(rates.items()))
+
+
+def operator_line(summary: MutationSummary) -> str | None:
+    """Returns the per-operator kill counts, or None when no mutant was measured."""
+    rates = operator_rates(summary)
+    if not rates:
+        return None
+    return "By operator: " + ", ".join(f"{op} {k}/{n} ({k / n:.0%})" for op, (k, n) in rates.items())
+
+
+def coverage_line(summary: MutationSummary) -> str | None:
+    """Returns the constraint coverage text, or None when no constraint was extracted."""
+    if summary.coverage is None:
+        return None
+    untested = len(summary.untested)
+    return (
+        f"Constraint Coverage: {summary.constraints_killed} of {summary.constraints_total} constraints killed "
+        f"({summary.coverage:.1f}%); {summary.constraints_survived} survived or inconclusive, {untested} untested"
+    )
 
 
 def calls_line(summary: MutationSummary) -> str | None:

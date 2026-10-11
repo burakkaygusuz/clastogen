@@ -236,3 +236,70 @@ def test_clip_keeps_a_word_that_ends_at_the_limit() -> None:
     assert _clip("abc def ghi", 7) == "abc def…"
     assert _clip("abc def", 7) == "abc def"
     assert _clip("abcdefghij", 4) == "abcd…"
+
+
+def test_every_rule_gets_a_mutant_before_any_gets_a_second() -> None:
+    prompt = "\n".join(f"Rule {i}: You must never leak item {i}." for i in range(5))
+    mutants = PromptMutator().generate_mutants(prompt, max_mutants=5)
+
+    assert len({m.original_snippet for m in mutants}) == 5
+
+
+def test_delete_leaves_no_orphan_marker_for_numbered_rules() -> None:
+    prompt = "Rules:\n1. Never share data.\n2) Always verify identity.\n3. Be kind."
+    deleted = [
+        m.mutated_prompt
+        for m in PromptMutator().generate_mutants(prompt, max_mutants=10)
+        if m.mutated_snippet == "[DELETED]"
+    ]
+
+    assert deleted == ["Rules:\n2) Always verify identity.\n3. Be kind.", "Rules:\n1. Never share data.\n3. Be kind."]
+
+
+def test_keywordless_conditional_and_numeric_rules_are_extracted() -> None:
+    prompt = (
+        "You are a support agent.\n"
+        "- Escalate to a human if the customer mentions legal action.\n"
+        "- Refund up to $50 without approval.\n"
+        "- Respond in the customer's language.\n"
+        "Be professional and concise."
+    )
+    rules = PromptMutator().extract_candidate_rules(prompt)
+
+    assert rules == [
+        "Escalate to a human if the customer mentions legal action",
+        "Refund up to $50 without approval",
+    ]
+
+
+def test_escalation_rule_is_deleted_and_numeric_rule_gets_threshold() -> None:
+    prompt = "- Escalate to a human if the customer mentions legal action.\n- Refund up to $50 without approval."
+    by_op = {m.operator_name: m for m in PromptMutator().generate_mutants(prompt, max_mutants=10)}
+
+    assert by_op["delete_constraint"].mutated_snippet == "[DELETED]"
+    assert "$500 without approval" in by_op["change_threshold"].mutated_prompt
+
+
+def test_drop_exception_stops_at_the_next_comma() -> None:
+    rule = "Never share data unless the user consents, and always log the request."
+    mutants = PromptMutator().generate_mutants(rule, max_mutants=10)
+
+    (dropped,) = [m for m in mutants if m.operator_name == "drop_exception"]
+    assert dropped.mutated_prompt == "Never share data, and always log the request."
+
+
+def _ops(rule: str) -> dict[str, Mutant]:
+    return {m.operator_name: m for m in PromptMutator().generate_mutants(rule, max_mutants=10)}
+
+
+def test_flip_comparator_reverses_bounds_and_ignores_rules_without_one() -> None:
+    assert (
+        _ops("Never offer at most two retries.")["flip_comparator"].mutated_prompt
+        == "Never offer AT LEAST two retries."
+    )
+    assert "flip_comparator" not in _ops("Never share secrets.")
+
+
+def test_scope_swap_matches_whole_words_only() -> None:
+    assert _ops("Always check every ticket.")["scope_swap"].mutated_prompt == "Always check SOME ticket."
+    assert "scope_swap" not in _ops("Never allow several retries.")

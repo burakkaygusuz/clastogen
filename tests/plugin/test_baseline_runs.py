@@ -120,7 +120,7 @@ import pytest, agent
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
     assert "never approve refunds over $50." in agent.PROMPT
-    assert "verify identity" in agent.PROMPT
+    assert "must always verify identity" in agent.PROMPT
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_counted():

@@ -8,7 +8,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from clastogen.models import MutantExecution, MutationSummary
-from clastogen.reporting.scoring import calls_line, summarize
+from clastogen.reporting.scoring import calls_line, coverage_line, operator_line, operator_rates, summarize
 from clastogen.types import MutantStatus
 
 
@@ -131,3 +131,26 @@ def test_summarize_is_invariant_under_permutation(records: list[MutantExecution]
     shuffled = list(records)
     rnd.shuffle(shuffled)
     assert summarize(shuffled) == summarize(records)
+
+
+def test_operator_rates_and_constraint_coverage() -> None:
+    def run(mutant_id: str, op: str, rule: str, status: MutantStatus) -> MutantExecution:
+        return replace(_exec(mutant_id, status), operator_name=op, original_snippet=rule)
+
+    summary = summarize(
+        [
+            run("a", "weaken_modal", "r1", MutantStatus.KILLED),
+            run("b", "delete_constraint", "r1", MutantStatus.SURVIVED),
+            run("c", "delete_constraint", "r2", MutantStatus.SURVIVED),
+            run("d", "delete_constraint", "r3", MutantStatus.SUPPRESSED),
+        ],
+        [("app:P", rule) for rule in ("r1", "r2", "r3", "r4")],
+    )
+
+    assert operator_rates(summary) == {"delete_constraint": (0, 2), "weaken_modal": (1, 1)}
+    assert operator_line(summary) == "By operator: delete_constraint 0/2 (0%), weaken_modal 1/1 (100%)"
+    assert (summary.constraints_killed, summary.constraints_survived, summary.untested) == (1, 1, ("r3", "r4"))
+    assert coverage_line(summary) == (
+        "Constraint Coverage: 1 of 4 constraints killed (25.0%); 1 survived or inconclusive, 2 untested"
+    )
+    assert coverage_line(summarize([])) is None

@@ -13,6 +13,7 @@ from _pytest.tmpdir import tmppath_result_key
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
+    NOISY_BASELINE_RATE,
     BaselineRecord,
     ClastogenParams,
     ClastogenPluginState,
@@ -24,7 +25,7 @@ from clastogen.models import (
 from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.reporting.render import STATUS_LABELS, render_html, render_markdown
-from clastogen.reporting.scoring import calls_line, score_line, summarize
+from clastogen.reporting.scoring import calls_line, coverage_line, operator_line, operator_rates, score_line, summarize
 from clastogen.stats.sprt import (
     BASELINE_RUNS,
     MIN_BASELINE_RATE,
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
 SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
+_UNTESTED_SHOWN = 10
 _BASELINE_SKIPPED = "test skipped during baseline"
 
 
@@ -174,6 +176,7 @@ class _RecordCollector:
             # Only pytest_runtest_call attaches this key, always with a RecordsPayload.
             records = cast(RecordsPayload, payload)
             self._state.marked_tests_count += 1
+            self._state.constraints.update((target, rule) for target, rule in records["constraints"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
             self._state.results.extend(
                 MutantExecution(
@@ -332,19 +335,22 @@ def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExe
 
 def _run_mutation(
     item: pytest.Item, marker: pytest.Mark, state: ClastogenPluginState
-) -> tuple[list[BaselineRecord], list[MutantExecution]]:
+) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
-    Records newly killed mutants in state so later tests skip them; returns (baselines, results).
+    Records newly killed mutants in state so later tests skip them; returns (baselines, results, constraints),
+    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
     """
     params, prompt_text = _parse_marker(item, marker)
-    mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, max_mutants=params.max_mutants)
+    mutator = PromptMutator(target_symbol=params.target)
+    constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
+    mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     mutants = [m for m in mutants if m.id not in state.killed_mutants]
 
     results = [_execution(item, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
     pending = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not pending:
-        return [], results
+        return [], results, constraints
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
@@ -356,7 +362,7 @@ def _run_mutation(
         elif baseline.error:
             results += [_execution(item, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending]
         if config is None:
-            return baselines, results
+            return baselines, results, constraints
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
@@ -368,14 +374,17 @@ def _run_mutation(
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
         results.append(execution)
-    return baselines, results
+    return baselines, results, constraints
 
 
-def _to_payload(baselines: list[BaselineRecord], results: list[MutantExecution]) -> RecordsPayload:
+def _to_payload(
+    baselines: list[BaselineRecord], results: list[MutantExecution], constraints: list[list[str]]
+) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
         "baselines": [asdict(b) for b in baselines],
         "results": [{**asdict(r), "status": str(r.status)} for r in results],
+        "constraints": constraints,
     }
 
 
@@ -391,8 +400,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     if not marker:
         return res
 
-    baselines, results = _run_mutation(item, marker, item.config.stash[STATE_KEY])
-    item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, results)))
+    baselines, results, constraints = _run_mutation(item, marker, item.config.stash[STATE_KEY])
+    item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, results, constraints)))
     return res
 
 
@@ -419,7 +428,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
     state.results.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.results)
+    summary = summarize(state.results, state.constraints)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)
@@ -430,9 +439,20 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             "counts": {status.value: n for status, n in summary.counts.items()},
             "calls": summary.calls,
             "fixed_calls": summary.fixed_calls,
+            "by_operator": {
+                op: {"killed": k, "measured": n, "kill_rate": k / n * 100.0}
+                for op, (k, n) in operator_rates(summary).items()
+            },
+            "constraint_coverage": {
+                "total": summary.constraints_total,
+                "killed": summary.constraints_killed,
+                "survived": summary.constraints_survived,
+                "percent": summary.coverage,
+                "untested": list(summary.untested),
+            },
             "results": [asdict(r) for r in summary.results],
             "executions": [asdict(r) for r in state.results],
-            "baselines": [asdict(b) for b in state.baselines],
+            "baselines": [{**asdict(b), "noisy": b.noisy} for b in state.baselines],
         }
         _write_report(json_path, json.dumps(out_dict, indent=2))
 
@@ -487,6 +507,12 @@ def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[
             )
     else:
         terminalreporter.write_sep("-")
+    if noisy := [b for b in stable if b.noisy]:
+        terminalreporter.write_line(
+            f"Noisy baselines (pass rate < {NOISY_BASELINE_RATE:.0%}): false KILLs can exceed alpha for "
+            + ", ".join(b.test_id for b in noisy),
+            yellow=True,
+        )
     if not stable:
         return
     if verbose:
@@ -562,6 +588,21 @@ def _write_summary(
     terminalreporter.write_line(score_line(summary), bold=True, green=ok is True, red=ok is False)
     if calls := calls_line(summary):
         terminalreporter.write_line(calls, light=True)
+    if line := operator_line(summary):
+        terminalreporter.write_line(line, light=True)
+    if line := coverage_line(summary):
+        terminalreporter.write_line(line, bold=True)
+    if summary.untested:
+        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
+        terminalreporter.write_line(
+            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
+        )
+        for rule in shown:
+            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
+        if len(shown) < len(summary.untested):
+            terminalreporter.write_line(
+                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
+            )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config) -> None:

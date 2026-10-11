@@ -10,11 +10,11 @@
 
 Clastogen breaks your system prompt on purpose and checks if your existing pytest evals notice.
 
-| Your prompt says | Clastogen changes it to |
-| --- | --- |
-| You must **never** approve refunds over $50 | You must **ALWAYS** approve refunds over $50 |
+| Your prompt says                             | Clastogen changes it to                       |
+| -------------------------------------------- | --------------------------------------------- |
+| You must **never** approve refunds over $50  | You must **ALWAYS** approve refunds over $50  |
 | You must **always** verify customer identity | You must **USUALLY** verify customer identity |
-| ... refunds over **$50** | ... refunds over **$500** |
+| ... refunds over **$50**                     | ... refunds over **$500**                     |
 
 If your tests still pass, you found a blind spot.
 
@@ -37,10 +37,10 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 
 ## How it works
 
-1. Clastogen finds the rules in your system prompt: sentences with words such as `must`, `never`, `always` or `only`.
-2. It makes mutants. Each mutant has one fault: a rule is deleted, inverted ("never" → "ALWAYS"), weakened ("must" → "should"), or its number is multiplied by 10.
+1. Clastogen finds the rules in your system prompt: sentences with a word such as `must`, `never`, `always`, `only`, `if`, `unless`, `escalate` or `refuse`, or with a number. Role sentences ("You are …") are skipped.
+2. It makes mutants. Each mutant has one fault: a rule is deleted, inverted ("never" → "ALWAYS"), weakened ("must" → "should"), its number is multiplied by 10, its "unless …" clause is dropped, its comparator is flipped ("at most" → "AT LEAST"), its scope is narrowed ("all" → "SOME"), or a whole section or `<example>` is deleted. Every rule gets one mutant before any rule gets a second, so a small `max_mutants` still spreads over the prompt.
 3. It runs your marked tests with each mutant. If a test fails, the mutant is **killed**. If all tests pass, the mutant **survived**: that is a blind spot.
-4. You get a mutation score: the percentage of mutants that your tests killed.
+4. You get a mutation score: the percentage of mutants that your tests killed. Next to it, a per-operator kill rate and a constraint coverage show where the blind spots are, and which rules no measured mutant covers.
 
 LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
 
@@ -51,16 +51,6 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
 - ✓ Plain `assert` statements
 - ✓ DeepEval metrics with `assert_test` ([example](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_deepeval_eval.py))
 - ✓ Ragas, LLM-as-judge or your own evaluator, called in a pytest test
-
-| Tool | The question that it answers |
-| --- | --- |
-| promptfoo | Which prompt and model give better output? Is my app safe from attacks? |
-| DeepEval, Ragas | Is the output relevant, correct and faithful to the context? |
-| Inspect AI | How well does a model or agent do a task? |
-| muteval | Does my eval suite catch a degraded prompt, RAG context, tool output or model? |
-| **Clastogen** | **If my system prompt breaks, do my tests fail?** |
-
-muteval is the closest alternative. Clastogen focuses on system-prompt mutations and runs directly inside pytest.
 
 ---
 
@@ -98,7 +88,7 @@ muteval is the closest alternative. Clastogen focuses on system-prompt mutations
 
 ## Demo
 
-You do not need an API key for this demo. [`examples/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`examples/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
+This demo is a **mock** agent, so it needs no API key. For a real model, see [the case study below](#real-models). [`examples/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`examples/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
 
 ```bash
 uv run pytest --clastogen --clastogen-html=reports/report.html examples/test_banking_eval.py
@@ -128,6 +118,8 @@ The terminal output:
 2 survived: your tests still pass with these prompt faults.
 Mutation Score: 60.0% (3 of 5 killed)
 Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
+By operator: change_threshold 0/1 (0%), delete_constraint 1/1 (100%), invert_negation 1/2 (50%), weaken_modal 1/1 (100%)
+Constraint Coverage: 1 of 2 constraints killed (50.0%); 1 survived or inconclusive, 0 untested
 ```
 
 The `Calls` line compares this run with a fixed-N test that has the same error rates. Here the mock agent gives clean kills, so the saving is large. [Simulated averages](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md#savings-against-a-fixed-sample-size) are 48–56%.
@@ -135,6 +127,10 @@ The `Calls` line compares this run with a fixed-N test that has the same error r
 The same results go to `reports/report.html`:
 
 ![Clastogen HTML report](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/report.png)
+
+### Real models
+
+The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
 
 ---
 
@@ -170,7 +166,7 @@ The pytest `--junitxml` file also contains the Clastogen records of each marked 
 
 - [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, known limitations.
 - [Statistics](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md): statistical assertions API (`assert_pass_rate`, `assert_no_regression`), SPRT simulations and guarantees.
-- [Benchmark](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/README.md): a weak and a strong eval suite against 10 prompt mutants on a real model, 20 runs each, with the stability of the verdicts and the measured call savings.
+- [Case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md): a realistic support agent, a 12-test suite and an independent oracle that tells blind spots from equivalent mutants.
 - [Agent skill](https://github.com/burakkaygusuz/clastogen/blob/main/skills/clastogen/SKILL.md): lets a coding agent (Claude Code, Codex, Cursor) mark your evals, run Clastogen and fix the survivors. Copy `skills/clastogen/` into your agent's skills directory.
 - [Contributing](https://github.com/burakkaygusuz/clastogen/blob/main/CONTRIBUTING.md)
 

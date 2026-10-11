@@ -35,7 +35,7 @@ import pytest, agent
 async def test_strong():
     out = await agent.ask()
     assert "never approve refunds over $50." in out
-    assert "verify identity" in out
+    assert "must always verify identity" in out
 """,
     )
     result = pytester.runpytest("--clastogen")

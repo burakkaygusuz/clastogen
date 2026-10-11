@@ -105,6 +105,9 @@ ignore = [
 "fuzz/*" = ["S101"]
 "benchmarks/*" = ["S101", "S603", "S607"]
 
+[tool.ty.environment]
+extra-paths = ["benchmarks/support_desk"]
+
 [tool.ty.analysis]
 # Optional: the DeepEval example skips without deepeval; atheris is Linux-only.
 allowed-unresolved-imports = ["deepeval.**", "atheris"]
@@ -114,7 +117,7 @@ unused-ignore-comment = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src", ".", "benchmarks/support_desk"]
 
 [tool.coverage.run]
 source = ["src/clastogen"]

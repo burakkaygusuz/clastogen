@@ -5,6 +5,7 @@ import clastogen.exceptions
 import clastogen.models
 import clastogen.mutation.injection
 import clastogen.mutation.mutator
+import clastogen.mutation.structure
 import clastogen.plugin
 import clastogen.reporting.render
 import clastogen.reporting.scoring
@@ -21,6 +22,7 @@ for mod in [
     clastogen.models,
     clastogen.reporting.scoring,
     clastogen.reporting.render,
+    clastogen.mutation.structure,
     clastogen.mutation.mutator,
     clastogen.stats.sprt,
     clastogen.mutation.injection,

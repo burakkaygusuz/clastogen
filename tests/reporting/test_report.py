@@ -54,3 +54,14 @@ def test_markdown_lists_survivors_first_and_renders_prompt_text_literally() -> N
     assert "| ✗ SURVIVED | `survivor` | ` mutant survivor ` | ` test_a, test_b ` |" in md
     assert "| `` a \\| b <!-- <details> @team `x` `` |" in md
     assert "Flaky tests (not mutated): ` test_flaky `" in md
+
+
+def test_reports_show_operator_rates_and_untested_constraints() -> None:
+    executions = [_execution("t.py::test_a", "m1", MutantStatus.KILLED)]
+    summary = summarize(executions, [("app:PROMPT", "rule"), ("app:PROMPT", "never <b>shared</b>")])
+
+    for out in (render_html(summary, executions, []), render_markdown(summary, executions, [])):
+        assert "By operator: op 1/1 (100%)" in out
+        assert "Constraint Coverage: 1 of 2 constraints killed (50.0%)" in out
+    assert "<li><code>never &lt;b&gt;shared&lt;/b&gt;</code></li>" in render_html(summary, executions, [])
+    assert "- ` never <b>shared</b> `" in render_markdown(summary, executions, [])
