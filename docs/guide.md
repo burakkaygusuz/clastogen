@@ -93,7 +93,7 @@ If the file is not correct, a `--clastogen` run stops with a usage error. Runs w
 
 ## Known limitations
 
-1. **Mutation operators:** Clastogen finds rules by their words, not by meaning. A sentence is a candidate if it has a keyword (`must`, `never`, `always`, `avoid`, `only`, `require`, `if`, `unless`, `at most`, `within`, `without`, `escalate`, `refuse`, `reject`, `decline`, `approve` and similar) or any digit. Role sentences ("You are a …") are not candidates. A rule with none of these, for example "Respond in the customer's language", is not mutated. These operators apply to each candidate; an operator that finds nothing to change in a rule gives no mutant:
+1. **Mutation operators:** Clastogen finds rules by their words, not by meaning. A sentence is a candidate if it has a keyword (`must`, `never`, `always`, `avoid`, `only`, `require`, `if`, `unless`, `at most`, `within`, `without`, `escalate`, `refuse`, `reject`, `decline`, `approve` and similar) or any digit. Role sentences ("You are a …") are not candidates. A rule with none of these, for example "Respond in the customer's language", is not mutated. The keywords are English, so in a prompt in another language only the sentences with a digit are candidates. These operators apply to each candidate; an operator that finds nothing to change in a rule gives no mutant:
 
    | Operator | Change |
    | --- | --- |

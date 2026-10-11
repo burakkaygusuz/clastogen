@@ -10,11 +10,11 @@
 
 Clastogen breaks your system prompt on purpose and checks if your existing pytest evals notice.
 
-| Your prompt says | Clastogen changes it to |
-| --- | --- |
-| You must **never** approve refunds over $50 | You must **ALWAYS** approve refunds over $50 |
+| Your prompt says                             | Clastogen changes it to                       |
+| -------------------------------------------- | --------------------------------------------- |
+| You must **never** approve refunds over $50  | You must **ALWAYS** approve refunds over $50  |
 | You must **always** verify customer identity | You must **USUALLY** verify customer identity |
-| ... refunds over **$50** | ... refunds over **$500** |
+| ... refunds over **$50**                     | ... refunds over **$500**                     |
 
 If your tests still pass, you found a blind spot.
 
@@ -51,16 +51,6 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
 - ✓ Plain `assert` statements
 - ✓ DeepEval metrics with `assert_test` ([example](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_deepeval_eval.py))
 - ✓ Ragas, LLM-as-judge or your own evaluator, called in a pytest test
-
-| Tool | The question that it answers |
-| --- | --- |
-| promptfoo | Which prompt and model give better output? Is my app safe from attacks? |
-| DeepEval, Ragas | Is the output relevant, correct and faithful to the context? |
-| Inspect AI | How well does a model or agent do a task? |
-| muteval | Does my eval suite catch a degraded prompt, RAG context, tool output or model? |
-| **Clastogen** | **If my system prompt breaks, do my tests fail?** |
-
-muteval is the closest alternative, and it is broader: it also mutates RAG context, tool output and the model, and it scores by how much the output changes. Clastogen only mutates the system prompt. Its edge is narrower: a sequential test (SPRT) that stays valid when the model's output is random, and a pytest plugin that needs no other setup.
 
 ---
 
