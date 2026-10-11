@@ -83,6 +83,8 @@ def test_weak():
         return {r["mutant_id"]: r["status"] for r in data["results"]}
 
     assert verdicts(runs["parallel"]) == verdicts(runs["serial"])
+    assert runs["parallel"]["constraint_coverage"] == runs["serial"]["constraint_coverage"]
+    assert runs["parallel"]["by_operator"] == runs["serial"]["by_operator"]
     assert runs["parallel"]["mutation_score"] == runs["serial"]["mutation_score"] == 100.0
     # The serial run skips mutants that the strong test killed; each worker only knows its own kills.
     assert runs["serial"]["calls"] < runs["parallel"]["calls"]
