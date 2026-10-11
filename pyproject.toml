@@ -114,7 +114,7 @@ unused-ignore-comment = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src", ".", "benchmarks/support_desk"]
 
 [tool.coverage.run]
 source = ["src/clastogen"]

@@ -42,5 +42,5 @@ Thumbs.db
 # Clastogen report output (--clastogen-json / --clastogen-html)
 reports/
 
-# Raw benchmark runs; the per-model summaries in benchmarks/results/ are committed
-benchmarks/results/*/*_[0-9][0-9].*
+# Raw case-study runs; oracle.json and the summaries in benchmarks/support_desk/results/ are committed
+benchmarks/support_desk/results/*/run_[0-9][0-9].*

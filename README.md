@@ -88,7 +88,7 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
 
 ## Demo
 
-This demo is a **mock** agent, so it needs no API key. For a real model, see [the benchmark below](#real-models). [`examples/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`examples/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
+This demo is a **mock** agent, so it needs no API key. For a real model, see [the case study below](#real-models). [`examples/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`examples/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
 
 ```bash
 uv run pytest --clastogen --clastogen-html=reports/report.html examples/test_banking_eval.py
@@ -130,7 +130,7 @@ The same results go to `reports/report.html`:
 
 ### Real models
 
-The [benchmark](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/README.md) runs the same idea against three real models (DeepSeek, Haiku, Luna), 20 runs each. A weak suite that only checks that the agent replied kills 0% of the mutants on every model. A strong suite that asserts each rule's decision kills 38–56%, and no model's strong suite ever killed four of the ten mutants. That is a blind spot in the eval or an equivalent mutant; the per-mutant kill rates in the benchmark let you tell which.
+The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
 
 ---
 
@@ -166,7 +166,7 @@ The pytest `--junitxml` file also contains the Clastogen records of each marked 
 
 - [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, known limitations.
 - [Statistics](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md): statistical assertions API (`assert_pass_rate`, `assert_no_regression`), SPRT simulations and guarantees.
-- [Benchmark](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/README.md): a weak and a strong eval suite against 10 prompt mutants on a real model, 20 runs each, with the stability of the verdicts and the measured call savings.
+- [Case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md): a realistic support agent, a 12-test suite and an independent oracle that tells blind spots from equivalent mutants.
 - [Agent skill](https://github.com/burakkaygusuz/clastogen/blob/main/skills/clastogen/SKILL.md): lets a coding agent (Claude Code, Codex, Cursor) mark your evals, run Clastogen and fix the survivors. Copy `skills/clastogen/` into your agent's skills directory.
 - [Contributing](https://github.com/burakkaygusuz/clastogen/blob/main/CONTRIBUTING.md)
 
