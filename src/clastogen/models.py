@@ -88,10 +88,22 @@ class MutationSummary:
     score: float | None
     calls: int = 0
     fixed_calls: int = 0
+    constraints_killed: int = 0
+    constraints_survived: int = 0
+    untested: tuple[str, ...] = ()
 
     @property
     def total(self) -> int:
         return len(self.results)
+
+    @property
+    def constraints_total(self) -> int:
+        return self.constraints_killed + self.constraints_survived + len(self.untested)
+
+    @property
+    def coverage(self) -> float | None:
+        """Share of extracted constraints with a killed mutant, None when the prompts had no constraints."""
+        return self.constraints_killed / self.constraints_total * 100.0 if self.constraints_total else None
 
 
 @dataclass
@@ -101,6 +113,7 @@ class ClastogenPluginState:
     results: list[MutantExecution] = field(default_factory=list)
     baselines: list[BaselineRecord] = field(default_factory=list)
     summary: MutationSummary | None = None
+    constraints: set[tuple[str, str]] = field(default_factory=set)
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0

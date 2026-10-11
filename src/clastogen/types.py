@@ -27,3 +27,4 @@ class RecordsPayload(TypedDict):
 
     baselines: list[dict[str, Any]]
     results: list[dict[str, Any]]
+    constraints: list[list[str]]

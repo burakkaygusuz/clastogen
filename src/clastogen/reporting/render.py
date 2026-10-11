@@ -1,11 +1,10 @@
 import re
 from collections.abc import Sequence
-from dataclasses import replace
 from html import escape
 from importlib.resources import files
 
 from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
-from clastogen.reporting.scoring import MEASURED, calls_line, score_line
+from clastogen.reporting.scoring import MEASURED, calls_line, coverage_line, operator_line, score_line
 from clastogen.stats.sprt import MIN_BASELINE_RATE
 from clastogen.types import MutantStatus
 
@@ -91,8 +90,8 @@ def _donut(summary: MutationSummary) -> str:
     )
 
 
-def _llr_chart(summary: MutationSummary) -> str:
-    measured = [(r, r.llr) for r in summary.results if r.llr is not None]
+def _llr_chart(results: Sequence[MutantExecution]) -> str:
+    measured = [(r, r.llr) for r in results if r.llr is not None]
     if not measured:
         return '<p class="empty">No measured mutants.</p>'
     scale = max(abs(llr) for _, llr in measured) or 1.0
@@ -110,14 +109,14 @@ def _llr_chart(summary: MutationSummary) -> str:
     )
 
 
-def _matrix(summary: MutationSummary, executions: Sequence[MutantExecution]) -> str:
+def _matrix(results: Sequence[MutantExecution], executions: Sequence[MutantExecution]) -> str:
     tests = sorted({e.test_id for e in executions})
-    if not tests or not summary.results:
+    if not tests or not results:
         return '<p class="empty">No mutant was evaluated by a test.</p>'
     cells = {(e.mutant_id, e.test_id): e.status for e in executions}
     head = "".join(f'<th title="{escape(t)}"><code>{escape(t.split("::")[-1])}</code></th>' for t in tests)
     rows = []
-    for r in summary.results:
+    for r in results:
         tds = []
         for t in tests:
             status = cells.get((r.mutant_id, t))
@@ -140,6 +139,10 @@ def _matrix(summary: MutationSummary, executions: Sequence[MutantExecution]) -> 
 _STATUS_ORDER = {status: i for i, status in enumerate(STATUS_LABELS)}
 
 
+def _by_status(results: Sequence[MutantExecution]) -> list[MutantExecution]:
+    return sorted(results, key=lambda r: _STATUS_ORDER[r.status])
+
+
 def _test_names(test_ids: Sequence[str]) -> str:
     return "<br>".join(f'<code title="{escape(t)}">{escape(t.split("::")[-1])}</code>' for t in test_ids)
 
@@ -152,8 +155,8 @@ def _survivor_tests(executions: Sequence[MutantExecution]) -> dict[str, list[str
     return passed_in
 
 
-def _results_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> str:
-    if not summary.results:
+def _results_table(results: Sequence[MutantExecution], executions: Sequence[MutantExecution]) -> str:
+    if not results:
         return '<p class="empty">No mutants were evaluated.</p>'
     # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
     passed_in = _survivor_tests(executions)
@@ -166,7 +169,7 @@ def _results_table(summary: MutationSummary, executions: Sequence[MutantExecutio
             if r.llr is not None
             else '<td class="num">&ndash;</td><td class="num">&ndash;</td></tr>'
         )
-        for r in summary.results
+        for r in results
     )
     return (
         '<div class="scroll"><table><thead><tr><th>Status</th><th>Mutant</th><th>Tests</th><th>Runs</th><th>LLR</th>'
@@ -201,22 +204,31 @@ def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
     )
 
 
+def _coverage(summary: MutationSummary) -> str:
+    lines = [escape(line) for line in (operator_line(summary), coverage_line(summary)) if line]
+    html = f'<p class="note">{"<br>".join(lines)}</p>' if lines else ""
+    if summary.untested:
+        items = "".join(f"<li><code>{escape(rule)}</code></li>" for rule in summary.untested)
+        html += f'<h3>Untested constraints</h3><ul class="legend">{items}</ul>'
+    return html
+
+
 def render_html(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
     """Renders a self-contained HTML report with inline SVG/CSS charts and no external assets."""
-    summary = replace(summary, results=tuple(sorted(summary.results, key=lambda r: _STATUS_ORDER[r.status])))
+    results = _by_status(summary.results)
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>Clastogen Report</title><style>{_CSS}</style></head><body><main>"
         "<h1>Clastogen Mutation Testing Report</h1>"
         '<p class="sub">Score = killed / (killed + survived + inconclusive).</p>'
-        f"{_cards(summary)}"
+        f"{_cards(summary)}{_coverage(summary)}"
         f'<div class="charts"><div class="panel"><h3>Status distribution</h3>{_donut(summary)}</div>'
-        f'<div class="panel"><h3>SPRT evidence per mutant</h3>{_llr_chart(summary)}</div></div>'
-        f"<h2>Kill matrix</h2>{_matrix(summary, executions)}"
-        f"<h2>Mutants</h2>{_results_table(summary, executions)}"
+        f'<div class="panel"><h3>SPRT evidence per mutant</h3>{_llr_chart(results)}</div></div>'
+        f"<h2>Kill matrix</h2>{_matrix(results, executions)}"
+        f"<h2>Mutants</h2>{_results_table(results, executions)}"
         f"<h2>Baselines</h2>{_baselines_table(baselines)}</main></body></html>"
     )
 
@@ -235,12 +247,17 @@ def render_markdown(
     lines = ["## Clastogen mutation testing", "", f"**{score_line(summary)}**"]
     if calls := calls_line(summary):
         lines += ["", calls]
+    for line in (operator_line(summary), coverage_line(summary)):
+        if line:
+            lines += ["", line]
+    if summary.untested:
+        lines += ["", "Untested constraints:", "", *(f"- {_code(rule)}" for rule in summary.untested)]
     if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
     if summary.results:
         passed_in = _survivor_tests(executions)
         lines += ["", "| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
-        for r in sorted(summary.results, key=lambda r: _STATUS_ORDER[r.status]):
+        for r in _by_status(summary.results):
             tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
             change = f"{r.description} [{r.error}]" if r.error else r.description
             lines.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(change)} | {_code(tests)} |")

@@ -24,7 +24,7 @@ _STRONG = """
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
     assert "never approve refunds over $50." in agent.ask()
-    assert "verify identity" in agent.ask()
+    assert "must always verify identity" in agent.ask()
 """
 
 
@@ -76,7 +76,7 @@ def test_weak():
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
     assert "never approve refunds over $50." in agent.ask()
-    assert "verify identity" in agent.ask()
+    assert "must always verify identity" in agent.ask()
 """,
     )
     json_out = pytester.path / "out.json"
@@ -126,7 +126,7 @@ import pytest, agent
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
     assert "never approve refunds over $50." in agent.ask()
-    assert "verify identity" in agent.ask()
+    assert "must always verify identity" in agent.ask()
 """,
     )
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50")
@@ -196,7 +196,7 @@ ORIGINAL = agent.PROMPT
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_errors_under_mutation():
     if agent.PROMPT != ORIGINAL:
-        if "refunds" not in agent.PROMPT:
+        if "must always" not in agent.PROMPT:
             raise KeyError("boom")
         assert False
 """,
@@ -219,3 +219,22 @@ def test_calls_line_and_json_count_every_execution(pytester: pytest.Pytester) ->
         f"Calls: {data['calls']} (a fixed-N test with the same error rates needs {data['fixed_calls']}:",
         result.stdout.str(),
     )
+
+
+def test_untested_constraint_is_reported_in_terminal_and_json(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_cov=(
+            "import pytest, agent\n"
+            '@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1)\n'
+            "def test_strong():\n"
+            '    assert "never approve refunds over $50." in agent.ask()\n'
+        ),
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+    cov = json.loads(json_out.read_text(encoding="utf-8"))["constraint_coverage"]
+    check.equal((cov["total"], cov["killed"], len(cov["untested"])), (2, 1, 1))
+    check.equal(cov["untested"], ["You must always verify identity before sharing balances."])
+    check.is_in("Constraint Coverage: 1 of 2 constraints killed (50.0%); 0 survived, 1 untested", result.stdout.str())
+    check.is_in("By operator: ", result.stdout.str())
