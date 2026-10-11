@@ -17,7 +17,9 @@ def test_parallel_workers_merge_results_and_baselines(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PYTHONPATH", str(SRC))
-    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")  # the report has non-ASCII text; pytester decodes the output as UTF-8
+    monkeypatch.setenv(
+        "PYTHONIOENCODING", "utf-8"
+    )  # the report has non-ASCII text; pytester decodes the output as UTF-8
     pytester.makepyfile(
         agent=AGENT,
         test_refunds="""
