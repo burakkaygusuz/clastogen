@@ -8,7 +8,7 @@ authors = [{ name = "Burak Kaygusuz" }]
 requires-python = ">=3.11"
 keywords = ["llm", "mutation-testing", "pytest", "ai-agents", "sprt", "evaluations"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
