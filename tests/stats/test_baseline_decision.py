@@ -4,8 +4,8 @@ import random
 
 import pytest
 
+from clastogen.models import Decision
 from clastogen.stats.sprt import BASELINE_RUNS, SPRT, config_from_baseline
-from clastogen.types import Decision
 
 REPS = 2000
 

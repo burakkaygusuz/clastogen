@@ -2,11 +2,51 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, TypedDict
 
-from clastogen.types import Decision, MutantStatus
+
+class Decision(StrEnum):
+    """Statistical outcome of a hypothesis test."""
+
+    KILLED = "KILLED"
+    SURVIVED = "SURVIVED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+# Declaration order is the merge precedence used by clastogen.reporting.scoring.summarize.
+class MutantStatus(StrEnum):
+    """Final disposition of a mutant after evaluation."""
+
+    KILLED = "KILLED"
+    SURVIVED = "SURVIVED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+    ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
+    SUPPRESSED = "SUPPRESSED"
+
+
+class RecordsPayload(TypedDict):
+    """Records of one marked test; execnet serializes only exact builtin types, so statuses travel as plain str."""
+
+    baselines: list[dict[str, Any]]
+    results: list[dict[str, Any]]
+    constraints: list[list[str]]
+    oracle: list[dict[str, Any]]
+
 
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90
+
+
+def _check_int(name: str, value: object, minimum: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}")
+
+
+def _check_unit(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 < value < 1.0:
+        raise ValueError(f"{name} must be a number in (0, 1), got {value!r}")
 
 
 @dataclass(frozen=True)
@@ -85,10 +125,19 @@ class BaselineRecord:
 
 
 @dataclass(frozen=True)
+class OracleRecord:
+    """One probe test's verdict on one mutant: regressed is a significant pass rate drop of at least delta."""
+
+    mutant_id: str
+    regressed: bool
+
+
+@dataclass(frozen=True)
 class MutationSummary:
     """Order-independent aggregate of all mutant evaluations in a session.
 
     calls and fixed_calls sum sample_count and fixed_n over every sampled execution, not only the merged results.
+    behavior maps a mutant ID to whether any probe found a behavior change; mutants no probe measured are absent.
     """
 
     results: tuple[MutantExecution, ...]
@@ -99,6 +148,7 @@ class MutationSummary:
     constraints_killed: int = 0
     constraints_survived: int = 0
     untested: tuple[str, ...] = ()
+    behavior: dict[str, bool] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -120,6 +170,7 @@ class ClastogenPluginState:
 
     results: list[MutantExecution] = field(default_factory=list)
     baselines: list[BaselineRecord] = field(default_factory=list)
+    oracle: list[OracleRecord] = field(default_factory=list)
     summary: MutationSummary | None = None
     constraints: set[tuple[str, str]] = field(default_factory=set)
     killed_mutants: set[str] = field(default_factory=set)
@@ -129,7 +180,12 @@ class ClastogenPluginState:
 
 @dataclass(frozen=True)
 class ClastogenParams:
-    """Arguments of @pytest.mark.clastogen; p0=None measures the baseline instead of assuming it."""
+    """Arguments of @pytest.mark.clastogen; p0=None measures the baseline instead of assuming it.
+
+    oracle_samples makes the test a probe: with --clastogen-oracle it runs that many times on the original prompt and
+    on every mutant to find the mutants that change behavior (delta is the minimum drop, alpha the significance), and
+    it gets no SPRT verdict of its own.
+    """
 
     target: str
     max_mutants: int = 5
@@ -138,18 +194,19 @@ class ClastogenParams:
     max_steps: int = 20
     alpha: float = 0.05
     beta: float = 0.10
+    oracle_samples: int | None = None
 
     def __post_init__(self) -> None:
         for name in ("max_mutants", "max_steps"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                raise ValueError(f"{name} must be an integer >= 1, got {value!r}")
-        for name in ("delta", "p0", "alpha", "beta"):
-            value = getattr(self, name)
-            if name == "p0" and value is None:
-                continue
-            if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 < value < 1.0:
-                raise ValueError(f"{name} must be a number in (0, 1), got {value!r}")
+            _check_int(name, getattr(self, name), 1)
+        if self.oracle_samples is not None:
+            _check_int("oracle_samples", self.oracle_samples, 5)
+        for name in ("delta", "alpha", "beta"):
+            _check_unit(name, getattr(self, name))
+        if self.p0 is not None:
+            _check_unit("p0", self.p0)
+        if self.oracle_samples is not None and self.alpha >= 0.5:
+            raise ValueError(f"alpha must be < 0.5 for a probe, got {self.alpha}")
         if self.p0 is not None and self.delta >= self.p0:
             raise ValueError(f"delta must be < p0, got delta={self.delta}, p0={self.p0}")
         if self.alpha + self.beta >= 1.0:

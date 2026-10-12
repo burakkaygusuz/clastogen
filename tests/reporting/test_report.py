@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from clastogen.models import BaselineRecord, MutantExecution
+from clastogen.models import BaselineRecord, MutantExecution, MutantStatus
 from clastogen.reporting.render import render_html, render_markdown
 from clastogen.reporting.scoring import summarize
-from clastogen.types import MutantStatus
 
 
 def _execution(test_id: str, mutant_id: str, status: MutantStatus) -> MutantExecution:

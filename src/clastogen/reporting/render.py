@@ -1,12 +1,24 @@
+import json
 import re
 from collections.abc import Sequence
+from dataclasses import asdict
 from html import escape
 from importlib.resources import files
 
-from clastogen.models import BaselineRecord, MutantExecution, MutationSummary
-from clastogen.reporting.scoring import MEASURED, calls_line, coverage_line, operator_line, score_line
+from clastogen.models import BaselineRecord, MutantExecution, MutantStatus, MutationSummary
+from clastogen.reporting.scoring import (
+    MEASURED,
+    behavior_label,
+    calls_line,
+    coverage_line,
+    exposure,
+    exposure_line,
+    operator_line,
+    operator_rates,
+    score_line,
+    survivor_tests,
+)
 from clastogen.stats.sprt import MIN_BASELINE_RATE
-from clastogen.types import MutantStatus
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
@@ -147,22 +159,22 @@ def _test_names(test_ids: Sequence[str]) -> str:
     return "<br>".join(f'<code title="{escape(t)}">{escape(t.split("::")[-1])}</code>' for t in test_ids)
 
 
-def _survivor_tests(executions: Sequence[MutantExecution]) -> dict[str, list[str]]:
-    passed_in: dict[str, list[str]] = {}
-    for e in executions:
-        if e.status == MutantStatus.SURVIVED:
-            passed_in.setdefault(e.mutant_id, []).append(e.test_id)
-    return passed_in
-
-
-def _results_table(results: Sequence[MutantExecution], executions: Sequence[MutantExecution]) -> str:
+def _results_table(
+    summary: MutationSummary, results: Sequence[MutantExecution], executions: Sequence[MutantExecution]
+) -> str:
     if not results:
         return '<p class="empty">No mutants were evaluated.</p>'
     # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
-    passed_in = _survivor_tests(executions)
+    passed_in = survivor_tests(executions)
+
+    def _behavior(mutant_id: str) -> str:
+        label = behavior_label(summary, mutant_id)
+        return f" <em>{escape(label)}</em>" if label else ""
+
     rows = "".join(
         f"<tr><td>{_status_badge(r.status)}</td>"
-        f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code></td>"
+        f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code>"
+        f"{_behavior(r.mutant_id)}</td>"
         f'<td class="tests">{_test_names(passed_in.get(r.mutant_id, [r.test_id]))}</td>'
         + (
             f'<td class="num">{r.sample_count}</td><td class="num">{r.llr:+.2f}</td></tr>'
@@ -207,7 +219,7 @@ def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
 
 
 def _coverage(summary: MutationSummary) -> str:
-    lines = [escape(line) for line in (operator_line(summary), coverage_line(summary)) if line]
+    lines = [escape(line) for line in (exposure_line(summary), operator_line(summary), coverage_line(summary)) if line]
     html = f'<p class="note">{"<br>".join(lines)}</p>' if lines else ""
     if summary.untested:
         items = "".join(f"<li><code>{escape(rule)}</code></li>" for rule in summary.untested)
@@ -230,7 +242,7 @@ def render_html(
         f'<div class="charts"><div class="panel"><h3>Status distribution</h3>{_donut(summary)}</div>'
         f'<div class="panel"><h3>SPRT evidence per mutant</h3>{_llr_chart(results)}</div></div>'
         f"<h2>Kill matrix</h2>{_matrix(results, executions)}"
-        f"<h2>Mutants</h2>{_results_table(results, executions)}"
+        f"<h2>Mutants</h2>{_results_table(summary, results, executions)}"
         f"<h2>Baselines</h2>{_baselines_table(baselines)}</main></body></html>"
     )
 
@@ -242,6 +254,18 @@ def _code(text: str) -> str:
     return f"{fence} {text} {fence}"
 
 
+def _markdown_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> list[str]:
+    passed_in = survivor_tests(executions)
+    rows = ["| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
+    for r in _by_status(summary.results):
+        tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
+        change = f"{r.description} [{r.error}]" if r.error else r.description
+        if label := behavior_label(summary, r.mutant_id):
+            change += f" ({label})"
+        rows.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(change)} | {_code(tests)} |")
+    return rows
+
+
 def render_markdown(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
@@ -249,7 +273,7 @@ def render_markdown(
     lines = ["## Clastogen mutation testing", "", f"**{score_line(summary)}**"]
     if calls := calls_line(summary):
         lines += ["", calls]
-    for line in (operator_line(summary), coverage_line(summary)):
+    for line in (exposure_line(summary), operator_line(summary), coverage_line(summary)):
         if line:
             lines += ["", line]
     if summary.untested:
@@ -259,10 +283,35 @@ def render_markdown(
     if noisy := [b.test_id.split("::")[-1] for b in baselines if b.noisy]:
         lines += ["", f"Noisy baselines (false KILLs can exceed alpha): {', '.join(map(_code, noisy))}"]
     if summary.results:
-        passed_in = _survivor_tests(executions)
-        lines += ["", "| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
-        for r in _by_status(summary.results):
-            tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
-            change = f"{r.description} [{r.error}]" if r.error else r.description
-            lines.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(change)} | {_code(tests)} |")
+        lines += ["", *_markdown_table(summary, executions)]
     return "\n".join(lines) + "\n"
+
+
+def render_json(
+    summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
+) -> str:
+    """Renders the structured JSON report; the behavior section is present only when a probe ran."""
+    report = {
+        "mutation_score": summary.score,
+        "total_mutants": summary.total,
+        "counts": {status.value: n for status, n in summary.counts.items()},
+        "calls": summary.calls,
+        "fixed_calls": summary.fixed_calls,
+        "by_operator": {
+            op: {"killed": k, "measured": n, "kill_rate": k / n * 100.0}
+            for op, (k, n) in operator_rates(summary).items()
+        },
+        "constraint_coverage": {
+            "total": summary.constraints_total,
+            "killed": summary.constraints_killed,
+            "survived": summary.constraints_survived,
+            "percent": summary.coverage,
+            "untested": list(summary.untested),
+        },
+        "results": [asdict(r) for r in summary.results],
+        "executions": [asdict(r) for r in executions],
+        "baselines": [{**asdict(b), "noisy": b.noisy} for b in baselines],
+    }
+    if (e := exposure(summary)) is not None:
+        report["behavior"] = {**e, "changed": summary.behavior}
+    return json.dumps(report, indent=2)
