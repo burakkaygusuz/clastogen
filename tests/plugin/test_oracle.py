@@ -84,7 +84,7 @@ def test_surviving_mutants_split_into_blind_spots_and_no_change_found(pytester: 
     check.equal(data["behavior"]["blind_spots"], 1)
     check.equal(data["behavior"]["no_change_found"], 1)
     check.equal(data["behavior"]["exposure_percent"], 0.0)
-    check.is_in("Behavior-changing mutants killed: 0 of 1 (0.0%); 1 blind spots", stdout)
+    check.is_in("Behavior-changing mutants killed: 0 of 1 (0.0%); defects: 1 blind spots", stdout)
 
 
 def test_probe_never_adds_an_sprt_verdict_of_its_own(pytester: pytest.Pytester) -> None:
@@ -96,8 +96,8 @@ def test_probe_never_adds_an_sprt_verdict_of_its_own(pytester: pytest.Pytester) 
 def test_adding_a_probe_never_removes_a_behavior_changed_label(pytester: pytest.Pytester) -> None:
     _, one = _run(pytester, WEAK, PROBE)
     _, two = _run(pytester, WEAK, PROBE, NOOP_PROBE)
-    changed_one = {m for m, c in one["behavior"]["changed"].items() if c}
-    changed_two = {m for m, c in two["behavior"]["changed"].items() if c}
+    changed_one = {m for m, label in one["behavior"]["labels"].items() if label == "changed"}
+    changed_two = {m for m, label in two["behavior"]["labels"].items() if label == "changed"}
     check.is_true(changed_one)
     check.is_true(changed_one <= changed_two)
 

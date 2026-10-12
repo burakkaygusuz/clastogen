@@ -125,8 +125,9 @@ def exposure_line(summary: MutationSummary) -> str | None:
         else f"Behavior-changing mutants killed: {e['caught']} of {e['caught'] + e['blind_spots']} ({percent:.1f}%)"
     )
     return (
-        f"{head}; {e['blind_spots']} blind spots, {e['no_change_found']} survived with no behavior change "
-        f"found, {e['false_kills']} killed without a behavior change, {e['unlabelled']} unlabelled"
+        f"{head}; defects: {e['blind_spots']} blind spots, {e['false_kills']} killed without a behavior change; "
+        f"not proven: {e['no_change_found']} survived with no behavior change found (no proof of equivalence), "
+        f"{e['unlabelled']} unlabelled"
     )
 
 

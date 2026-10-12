@@ -29,7 +29,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
 7. Run all marked tests. Use the same command without `-k`.
 8. Show the survivors and the coverage from the JSON report. The last column is the probe label (`None` if no probe ran):
    ```bash
-   python -c "import json; d = json.load(open('clastogen.json')); print(d['mutation_score'], d['counts'], d['by_operator'], d['constraint_coverage']); [print(r['mutant_id'], r['status'], r['operator_name'], d.get('behavior', {}).get('changed', {}).get(r['mutant_id']), '|', r['original_snippet'], '->', r['mutated_snippet']) for r in d['results'] if r['status'] in ('SURVIVED', 'INCONCLUSIVE', 'ERROR')]"
+   python -c "import json; d = json.load(open('clastogen.json')); print(d['mutation_score'], d['counts'], d['by_operator'], d['constraint_coverage']); [print(r['mutant_id'], r['status'], r['operator_name'], d.get('behavior', {}).get('labels', {}).get(r['mutant_id']), '|', r['original_snippet'], '->', r['mutated_snippet']) for r in d['results'] if r['status'] in ('SURVIVED', 'INCONCLUSIVE', 'ERROR')]"
    ```
 9. For each survivor, add an assertion. Refer to the section "Kill a survivor". If many survivors look harmless, offer probes to the user. Refer to the section "Find which survivors matter".
 10. If `constraint_coverage.untested` is not empty, no measured mutant covers these rules. Refer to the section "Untested constraints".
@@ -100,7 +100,7 @@ A survivor can be harmless: the model can keep its behavior without the rule. A 
    ```
 3. Use the same `max_mutants` as the other tests. A mutant that the tests do not measure gets no label in `results`.
 4. Run `pytest --clastogen --clastogen-oracle --clastogen-json=clastogen.json`.
-5. Read `behavior.changed`. It maps a mutant ID to `true` (behavior changed) or `false` (no behavior change found). Join it with `results` by `mutant_id`.
+5. Read `behavior.labels`. It maps a mutant ID to `"changed"` or `"no_change_found"`. Join it with `results` by `mutant_id`.
 
 | Label                        | Meaning                                                               | Action                                           |
 | ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |

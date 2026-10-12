@@ -313,5 +313,8 @@ def render_json(
         "baselines": [{**asdict(b), "noisy": b.noisy} for b in baselines],
     }
     if (e := exposure(summary)) is not None:
-        report["behavior"] = {**e, "changed": summary.behavior}
+        report["behavior"] = {
+            **e,
+            "labels": {m: "changed" if c else "no_change_found" for m, c in summary.behavior.items()},
+        }
     return json.dumps(report, indent=2)

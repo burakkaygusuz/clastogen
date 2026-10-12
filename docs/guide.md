@@ -60,7 +60,7 @@ The report crosses the verdict with the label:
 | **Killed** | caught | killed without a behavior change |
 | **Survived or inconclusive** | blind spot | survived with no behavior change found |
 
-A mutant that no probe measured is `unlabelled`. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
+A mutant that no probe measured is `unlabelled`. The terminal line splits the counts into defects (blind spots, killed without a behavior change) and not proven (survived with no behavior change found, unlabelled): a probe can miss a change, so "no behavior change found" never means equivalent. The JSON `behavior.labels` maps each measured mutant ID to `changed` or `no_change_found`. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
 
 - A probe judges a mutant alone, and a mutant changed behavior when **any** probe regressed. A new probe can add a label, and it never removes one. But every probe and every mutant is one more chance of a false "changed" (alpha is not corrected for the number of mutants): raise `delta` or lower `alpha` when you have many probes. The merge is monotone, but model output is random: a re-run can measure a probe differently.
 - "No behavior change found" is not a proof of equivalence. It means that no probe found a drop of `delta` or more. A rule that no probe covers can change behavior unseen.
