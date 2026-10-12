@@ -127,7 +127,7 @@ def exposure_line(summary: MutationSummary) -> str | None:
     return (
         f"{head}; defects: {e['blind_spots']} blind spots, {e['false_kills']} killed without a behavior change; "
         f"not proven: {e['no_change_found']} survived with no behavior change found (no proof of equivalence), "
-        f"{e['unlabelled']} unlabelled"
+        f"{e['unlabelled']} unlabelled (no probe measured them)"
     )
 
 

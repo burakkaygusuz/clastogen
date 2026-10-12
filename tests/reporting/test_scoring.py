@@ -208,7 +208,8 @@ def test_exposure_crosses_kill_status_with_behavior() -> None:
     assert counts["exposure_percent"] == pytest.approx(100 / 3)
     assert exposure_line(summary) == (
         "Behavior-changing mutants killed: 1 of 3 (33.3%); defects: 2 blind spots, 1 killed without a behavior "
-        "change; not proven: 1 survived with no behavior change found (no proof of equivalence), 1 unlabelled"
+        "change; not proven: 1 survived with no behavior change found (no proof of equivalence), "
+        "1 unlabelled (no probe measured them)"
     )
     assert behavior_label(summary, "caught") == "behavior changed"
     assert behavior_label(summary, "calm") == "no behavior change found"

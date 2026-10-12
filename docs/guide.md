@@ -55,16 +55,28 @@ With `pytest --clastogen --clastogen-oracle`, each probe runs `oracle_samples` t
 
 The report crosses the verdict with the label:
 
-| | Behavior changed | No behavior change found |
-| --- | --- | --- |
-| **Killed** | caught | killed without a behavior change |
-| **Survived or inconclusive** | blind spot | survived with no behavior change found |
+|                              | Behavior changed | No behavior change found               |
+| ---------------------------- | ---------------- | -------------------------------------- |
+| **Killed**                   | caught           | killed without a behavior change       |
+| **Survived or inconclusive** | blind spot       | survived with no behavior change found |
 
 A mutant that no probe measured is `unlabelled`. The terminal line splits the counts into defects (blind spots, killed without a behavior change) and not proven (survived with no behavior change found, unlabelled): a probe can miss a change, so "no behavior change found" never means equivalent. The JSON `behavior.labels` maps each measured mutant ID to `changed` or `no_change_found`. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
 
 - A probe judges a mutant alone, and a mutant changed behavior when **any** probe regressed. A new probe can add a label, and it never removes one. But every probe and every mutant is one more chance of a false "changed" (alpha is not corrected for the number of mutants): raise `delta` or lower `alpha` when you have many probes. The merge is monotone, but model output is random: a re-run can measure a probe differently.
 - "No behavior change found" is not a proof of equivalence. It means that no probe found a drop of `delta` or more. A rule that no probe covers can change behavior unseen.
-- The cost is probes × mutants × `oracle_samples` calls, plus `oracle_samples` baseline calls for each probe. Suppressed mutants are skipped. A probe whose baseline pass rate is below 80%, or whose trial is skipped or errors, is not measured, and its mutants stay `unlabelled`.
+- The cost is probes × mutants × `oracle_samples` calls, plus `oracle_samples` baseline calls for each probe. Suppressed mutants are skipped. A probe whose baseline pass rate is below 80%, or whose trial is skipped or errors, is not measured. A mutant whose probe trials error (for example, the injected prompt fails) is not measured either. Such mutants stay `unlabelled`.
+- A probe always runs exactly `oracle_samples` times. It does not stop early, so a label does not depend on when you stop.
+- Choose `oracle_samples` with this table. It gives the chance of the label `changed` for a mutant whose true pass rate drops from 0.9 (`delta=0.30`, `alpha=0.05`, computed with the same Fisher test as the plugin). With a baseline of 0.9, a mutant with no change gets the label in less than 1% of runs. With a baseline of 0.8, it can reach 1.5%.
+
+  | `oracle_samples` | true drop 0.3 | true drop 0.5 | true drop 0.7 |
+  | ---------------- | ------------- | ------------- | ------------- |
+  | 10               | 29%           | 66%           | 94%           |
+  | 20               | 58%           | 95%           | 100%          |
+  | 30               | 56%           | 98%           | 100%          |
+
+  The probe finds a drop of exactly `delta` in only 29% to 58% of runs. Thus, "no behavior change found" says little about small drops. Use at least 20 samples.
+
+- Do not write a second test for a behavior that a test already checks. Put the assertion in a helper and call it from two tests: one plain test with the marker for the SPRT verdict, and one probe with `oracle_samples`.
 
 ### Read the prompt at call time
 
@@ -122,18 +134,19 @@ If the file is not correct, a `--clastogen` run stops with a usage error. Runs w
 
 1. **Mutation operators:** Clastogen finds rules by their words, not by meaning. A sentence is a candidate if it has a keyword (`must`, `never`, `always`, `avoid`, `only`, `require`, `if`, `unless`, `at most`, `within`, `without`, `escalate`, `refuse`, `reject`, `decline`, `approve` and similar) or any digit. Role sentences ("You are a …") are not candidates. A rule with none of these, for example "Respond in the customer's language", is not mutated. The keywords are English, so in a prompt in another language only the sentences with a digit are candidates. These operators apply to each candidate; an operator that finds nothing to change in a rule gives no mutant:
 
-   | Operator | Change |
-   | --- | --- |
-   | `change_threshold` | the first number × 10 |
-   | `drop_exception` | removes the first "unless …" or "except …" clause, up to the next comma or semicolon |
-   | `flip_comparator` | "at most" ↔ "at least", "no more than" → "at least", "fewer than" ↔ "more than", "maximum" ↔ "minimum" |
-   | `scope_swap` | "all", "every", "each" → "some"; "both" → "either"; "any" → "every" |
-   | `delete_constraint` | removes the rule |
-   | `invert_negation` | "never" ↔ "always", "must" → "must not" and similar |
-   | `weaken_modal` | a hard word becomes a soft word, for example "must" becomes "should" |
+   | Operator                           | Change                                                                                                                                   |
+   | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+   | `change_threshold`                 | the first number × 10                                                                                                                    |
+   | `drop_exception`                   | removes the first "unless …" or "except …" clause, up to the next comma or semicolon                                                     |
+   | `flip_comparator`                  | "at most" ↔ "at least", "no more than" → "at least", "fewer than" ↔ "more than", "maximum" ↔ "minimum"                                   |
+   | `scope_swap`                       | "all", "every", "each" → "some"; "both" → "either"; "any" → "every"                                                                      |
+   | `delete_constraint`                | removes the rule                                                                                                                         |
+   | `invert_negation`                  | "never" ↔ "always", "must" → "must not" and similar                                                                                      |
+   | `weaken_modal`                     | a hard word becomes a soft word, for example "must" becomes "should"                                                                     |
    | `delete_section`, `delete_example` | removes a whole Markdown heading section (one that holds a rule) or an `<example>` block or "Examples" section, with its heading or tags |
 
    Every rule and every block gets one mutant before any gets a second, in prompt order, and `max_mutants` caps the total; with more candidates than the budget, evenly spaced ones are used. Rules without a measured mutant (no mutant, or only `ERROR`, `SKIPPED` and `SUPPRESSED` ones) are listed as untested constraints. Deleting a whole section is often an easy kill, so read the score next to the per-operator rates. Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
+
 2. **Mutants that do not change behavior:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Write [probes](#probes-which-survivors-matter) to see which survivors change behavior, and use suppressions (`.clastogen/suppressions.toml`) for the mutants that do not. To judge a low score, read the `By operator` line (a score that comes only from `weaken_modal` misses is more likely equivalent mutants than one from `delete_constraint` misses) and the `Constraint Coverage` line (it counts the rules that at least one mutant killed; `survived` are rules that were measured but never killed, including `INCONCLUSIVE` ones; a rule without a measured mutant is `untested`, so set `max_mutants` at least as high as the number of rules when coverage matters. A killed `delete_section` mutant does not credit the rules inside the section, and the line does not say which test killed a rule). The same numbers are in the JSON as `by_operator` and `constraint_coverage`.
 3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.
 4. **Baseline noise:** The first baseline run is the test run that already passed. Also, p0 is a point estimate. Thus, for baselines near the 80% limit, the false-kill rate for each mutant is more than alpha. These are the rates for an unchanged mutant (`delta=0.30`, `max_steps=20`, accepted baselines only): a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. A higher limit does not fix this problem. With a 90% limit, 0.85 still gives 7.0%. The terminal, Markdown and HTML reports flag every test with a raw baseline rate below 90% as a noisy baseline, and the JSON `baselines` have a `noisy` field. Make the test more stable, or set p0 explicitly.
