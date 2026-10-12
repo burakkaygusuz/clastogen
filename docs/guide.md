@@ -14,7 +14,8 @@
 - **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
 - **Flags:**
   - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
-  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses) and `baselines`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - `--clastogen-oracle`: runs the probe tests on every mutant to label which mutants change behavior. See [Probes](#probes-which-survivors-matter). The JSON then has a `behavior` section.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
   - `--clastogen-md PATH`: writes a short Markdown summary: the score and one table of mutants. Use it for GitHub job summaries and pull request comments. See [CI](../README.md#ci).
 
@@ -36,8 +37,34 @@ pytest --clastogen -s --log-cli-level=INFO
     max_steps=20,  # Maximum number of runs for each mutant (default: 20)
     alpha=0.05,  # SPRT type I error rate: chance to kill an unchanged mutant (default: 0.05)
     beta=0.10,  # SPRT type II error rate: chance to miss a real decrease (default: 0.10)
+    oracle_samples=None,  # Make this test a probe that runs this many times (at least 5; default: not a probe)
 )
 ```
+
+### Probes: which survivors matter
+
+A survivor is not always a blind spot. The model can keep its behavior without a rule, so the mutant changes nothing and no test could kill it. A **probe** is a test that tells the two cases apart. It is a normal pytest test that checks one behavior of the agent and passes on the original prompt:
+
+```python
+@pytest.mark.clastogen(target="my_app.agent:SYSTEM_PROMPT", oracle_samples=30)
+def test_probe_no_discount_codes():
+    assert "DISCOUNT" not in call_agent("Can you give me a discount code?")
+```
+
+With `pytest --clastogen --clastogen-oracle`, each probe runs `oracle_samples` times on the original prompt and as many times on every mutant of its target (also mutants another test killed). A mutant **changed behavior** when the probe's pass rate drops by at least `delta` and the drop is significant at `alpha` (one-sided Fisher exact test). Without the flag, a probe is only a normal test, and a probe never gets a `KILLED` or `SURVIVED` verdict of its own. Use the same `max_mutants` as the tests under check, so that both see the same mutants.
+
+The report crosses the verdict with the label:
+
+| | Behavior changed | No behavior change found |
+| --- | --- | --- |
+| **Killed** | caught | killed without a behavior change |
+| **Survived or inconclusive** | blind spot | survived with no behavior change found |
+
+A mutant that no probe measured is `unlabelled`. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
+
+- A probe judges a mutant alone, and a mutant changed behavior when **any** probe regressed. A new probe can add a label, and it never removes one. But every probe and every mutant is one more chance of a false "changed" (alpha is not corrected for the number of mutants): raise `delta` or lower `alpha` when you have many probes. The merge is monotone, but model output is random: a re-run can measure a probe differently.
+- "No behavior change found" is not a proof of equivalence. It means that no probe found a drop of `delta` or more. A rule that no probe covers can change behavior unseen.
+- The cost is probes × mutants × `oracle_samples` calls, plus `oracle_samples` baseline calls for each probe. Suppressed mutants are skipped. A probe whose baseline pass rate is below 80%, or whose trial is skipped or errors, is not measured, and its mutants stay `unlabelled`.
 
 ### Read the prompt at call time
 
@@ -107,7 +134,7 @@ If the file is not correct, a `--clastogen` run stops with a usage error. Runs w
    | `delete_section`, `delete_example` | removes a whole Markdown heading section (one that holds a rule) or an `<example>` block or "Examples" section, with its heading or tags |
 
    Every rule and every block gets one mutant before any gets a second, in prompt order, and `max_mutants` caps the total; with more candidates than the budget, evenly spaced ones are used. Rules without a measured mutant (no mutant, or only `ERROR`, `SKIPPED` and `SUPPRESSED` ones) are listed as untested constraints. Deleting a whole section is often an easy kill, so read the score next to the per-operator rates. Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
-2. **Equivalent mutants:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Use suppressions (`.clastogen/suppressions.toml`) for these mutants. To judge a low score, read the `By operator` line (a score that comes only from `weaken_modal` misses is more likely equivalent mutants than one from `delete_constraint` misses) and the `Constraint Coverage` line (it counts the rules that at least one mutant killed; `survived` are rules that were measured but never killed, including `INCONCLUSIVE` ones; a rule without a measured mutant is `untested`, so set `max_mutants` at least as high as the number of rules when coverage matters. A killed `delete_section` mutant does not credit the rules inside the section, and the line does not say which test killed a rule). The same numbers are in the JSON as `by_operator` and `constraint_coverage`.
+2. **Mutants that do not change behavior:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Write [probes](#probes-which-survivors-matter) to see which survivors change behavior, and use suppressions (`.clastogen/suppressions.toml`) for the mutants that do not. To judge a low score, read the `By operator` line (a score that comes only from `weaken_modal` misses is more likely equivalent mutants than one from `delete_constraint` misses) and the `Constraint Coverage` line (it counts the rules that at least one mutant killed; `survived` are rules that were measured but never killed, including `INCONCLUSIVE` ones; a rule without a measured mutant is `untested`, so set `max_mutants` at least as high as the number of rules when coverage matters. A killed `delete_section` mutant does not credit the rules inside the section, and the line does not say which test killed a rule). The same numbers are in the JSON as `by_operator` and `constraint_coverage`.
 3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.
 4. **Baseline noise:** The first baseline run is the test run that already passed. Also, p0 is a point estimate. Thus, for baselines near the 80% limit, the false-kill rate for each mutant is more than alpha. These are the rates for an unchanged mutant (`delta=0.30`, `max_steps=20`, accepted baselines only): a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. A higher limit does not fix this problem. With a 90% limit, 0.85 still gives 7.0%. The terminal, Markdown and HTML reports flag every test with a raw baseline rate below 90% as a noisy baseline, and the JSON `baselines` have a `noisy` field. Make the test more stable, or set p0 explicitly.
 5. **Differential execution:** After a test kills a mutant, other tests do not run that mutant again. But Clastogen does not make a static dependency graph before execution.
