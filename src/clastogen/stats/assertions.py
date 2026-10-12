@@ -4,9 +4,8 @@ import math
 from collections.abc import Callable
 from statistics import NormalDist
 
-from clastogen.models import PassRateResult, RegressionResult, SPRTConfig
+from clastogen.models import Decision, PassRateResult, RegressionResult, SPRTConfig
 from clastogen.stats.sprt import SPRT, check_outcome
-from clastogen.types import Decision
 
 
 def compute_wilson_interval(successes: int, total: int, confidence: float = 0.95) -> tuple[float, float]:
@@ -174,23 +173,11 @@ def evaluate_regression(
     alpha = 1.0 - confidence
 
     if paired:
-        b_wins = 0
-        c_wins = 0
-        b_passes = 0
-        c_passes = 0
-
-        for _ in range(sample_count):
-            b_out = check_outcome(baseline_fn())
-            c_out = check_outcome(candidate_fn())
-            b_passes += b_out
-            c_passes += c_out
-
-            if b_out and not c_out:
-                b_wins += 1
-            elif not b_out and c_out:
-                c_wins += 1
-
-        discordant = b_wins + c_wins
+        pairs = [(check_outcome(baseline_fn()), check_outcome(candidate_fn())) for _ in range(sample_count)]
+        b_passes = sum(b for b, _ in pairs)
+        c_passes = sum(c for _, c in pairs)
+        b_wins = sum(b and not c for b, c in pairs)
+        discordant = b_wins + sum(c and not b for b, c in pairs)
         p_val = _binom_upper_tail(b_wins, discordant) if discordant else 1.0
         test_name = "mcnemar"
     else:
