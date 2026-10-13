@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from typing import Any
 
-from clastogen.models import MutantExecution, MutantStatus, MutationSummary, OracleRecord
+from clastogen.models import BEHAVIOR_ORDER, Behavior, MutantExecution, MutantStatus, MutationSummary, OracleRecord
 
 _RANK = {status: rank for rank, status in enumerate(MutantStatus)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
@@ -32,12 +32,12 @@ def summarize(
     """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
 
     constraints are the (target, rule) pairs extracted from the prompts; each is killed, survived (measured, never
-    killed) or untested (no mutant measured), whatever the score says. A mutant changed behavior when any probe in
-    oracle regressed on it, so a probe added later can only add such labels.
+    killed) or untested (no mutant measured), whatever the score says. A mutant gets the strongest label of any probe
+    in oracle (changed, then suspected, then no_change_found), so a probe added later can only raise a label.
     """
-    behavior: dict[str, bool] = {}
+    behavior: dict[str, Behavior] = {}
     for o in oracle:
-        behavior[o.mutant_id] = behavior.get(o.mutant_id, False) or o.regressed
+        behavior[o.mutant_id] = max(behavior.get(o.mutant_id, o.label), o.label, key=BEHAVIOR_ORDER.index)
     merged: dict[str, MutantExecution] = {}
     calls = fixed_calls = 0
     for r in results:
@@ -85,31 +85,36 @@ def behavior_label(summary: MutationSummary, mutant_id: str) -> str | None:
 
     The oracle can fail to find a drop but cannot prove there is none, so it never says "equivalent".
     """
-    if mutant_id not in summary.behavior:
+    if (label := summary.behavior.get(mutant_id)) is None:
         return None
-    return "behavior changed" if summary.behavior[mutant_id] else "no behavior change found"
+    return {"changed": "behavior changed", "suspected": "behavior suspected"}.get(label, "no behavior change found")
+
+
+# (probe label, killed) -> exposure bucket; suspected ignores the kill status, and a mutant no probe labelled is absent.
+_QUADRANT = {
+    ("changed", True): "caught",
+    ("changed", False): "blind_spots",
+    ("no_change_found", True): "false_kills",
+    ("no_change_found", False): "no_change_found",
+    ("suspected", True): "suspected",
+    ("suspected", False): "suspected",
+}
 
 
 def exposure(summary: MutationSummary) -> dict[str, Any] | None:
     """Crosses the measured mutants' kill status with the oracle's label (not killed includes INCONCLUSIVE).
 
-    Returns None when no probe ran. exposure_percent is the share of the behavior-changing mutants that were killed,
-    None when no mutant changed behavior.
+    Returns None when no probe ran. suspected counts killed and surviving mutants alike and stays out of the other
+    quadrants. exposure_percent is the share of the behavior-changing mutants that were killed, None when no mutant
+    changed behavior.
     """
     if not summary.behavior:
         return None
-    counts = dict.fromkeys(("caught", "blind_spots", "no_change_found", "false_kills", "unlabelled"), 0)
+    counts = dict.fromkeys(("caught", "blind_spots", "no_change_found", "false_kills", "suspected", "unlabelled"), 0)
     for r in summary.results:
-        if r.status not in MEASURED:
-            continue
-        killed = r.status == MutantStatus.KILLED
-        changed = summary.behavior.get(r.mutant_id)
-        if changed is None:
-            counts["unlabelled"] += 1
-        elif changed:
-            counts["caught" if killed else "blind_spots"] += 1
-        else:
-            counts["false_kills" if killed else "no_change_found"] += 1
+        if r.status in MEASURED:
+            key = (summary.behavior.get(r.mutant_id), r.status == MutantStatus.KILLED)
+            counts[_QUADRANT.get(key, "unlabelled")] += 1
     changed_total = counts["caught"] + counts["blind_spots"]
     return {**counts, "exposure_percent": counts["caught"] / changed_total * 100.0 if changed_total else None}
 
@@ -127,7 +132,8 @@ def exposure_line(summary: MutationSummary) -> str | None:
     return (
         f"{head}; defects: {e['blind_spots']} blind spots, {e['false_kills']} killed without a behavior change; "
         f"not proven: {e['no_change_found']} survived with no behavior change found (no proof of equivalence), "
-        f"{e['unlabelled']} unlabelled (no probe measured them)"
+        f"{e['unlabelled']} unlabelled (no probe measured them); "
+        f"suspected: {e['suspected']} (a drop of delta is not ruled out)"
     )
 
 

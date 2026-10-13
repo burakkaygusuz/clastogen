@@ -46,10 +46,6 @@ def _badge(label: str, color: str) -> str:
     return f'<span class="badge" style="background:{color}">{escape(label)}</span>'
 
 
-def _status_badge(status: MutantStatus) -> str:
-    return _badge(status.value, _COLORS[status])
-
-
 def _error(error: str | None) -> str:
     return f'<div class="err">{escape(error)}</div>' if error else ""
 
@@ -172,7 +168,7 @@ def _results_table(
         return f" <em>{escape(label)}</em>" if label else ""
 
     rows = "".join(
-        f"<tr><td>{_status_badge(r.status)}</td>"
+        f"<tr><td>{_badge(r.status.value, _COLORS[r.status])}</td>"
         f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code>"
         f"{_behavior(r.mutant_id)}</td>"
         f'<td class="tests">{_test_names(passed_in.get(r.mutant_id, [r.test_id]))}</td>'
@@ -313,8 +309,5 @@ def render_json(
         "baselines": [{**asdict(b), "noisy": b.noisy} for b in baselines],
     }
     if (e := exposure(summary)) is not None:
-        report["behavior"] = {
-            **e,
-            "labels": {m: "changed" if c else "no_change_found" for m, c in summary.behavior.items()},
-        }
+        report["behavior"] = {**e, "labels": summary.behavior}
     return json.dumps(report, indent=2)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from clastogen.models import BaselineRecord, MutantExecution, MutantStatus
+from clastogen.models import BaselineRecord, MutantExecution, MutantStatus, OracleRecord
 from clastogen.reporting.render import render_html, render_markdown
 from clastogen.reporting.scoring import summarize
 
@@ -64,3 +64,18 @@ def test_reports_show_operator_rates_and_untested_constraints() -> None:
         assert "Constraint Coverage: 1 of 2 constraints killed (50.0%)" in out
     assert "<li><code>never &lt;b&gt;shared&lt;/b&gt;</code></li>" in render_html(summary, executions, [])
     assert "- ` never <b>shared</b> `" in render_markdown(summary, executions, [])
+
+
+def test_reports_label_each_mutant_with_what_the_probe_found() -> None:
+    executions = [
+        _execution("t.py::test_a", "m1", MutantStatus.KILLED),
+        _execution("t.py::test_a", "m2", MutantStatus.SURVIVED),
+    ]
+    summary = summarize(executions, oracle=[OracleRecord("m1", "changed"), OracleRecord("m2", "suspected")])
+
+    md = render_markdown(summary, executions, [])
+    html = render_html(summary, executions, [])
+    assert "mutant m1 (behavior changed)" in md
+    assert "mutant m2 (behavior suspected)" in md
+    assert "<em>behavior changed</em>" in html
+    assert "<em>behavior suspected</em>" in html

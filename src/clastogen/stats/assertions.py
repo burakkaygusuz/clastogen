@@ -36,6 +36,18 @@ def compute_wilson_interval(successes: int, total: int, confidence: float = 0.95
     return low, high
 
 
+def drop_upper_bound(baseline_passes: int, candidate_passes: int, n: int, alpha: float = 0.05) -> float:
+    """Computes the one-sided (1 - alpha) upper bound of the pass rate drop between two groups of n trials.
+
+    This is Newcombe's hybrid score bound, built from two Wilson intervals at confidence 1 - 2 * alpha. It is an
+    approximation, fine from about 20 trials per group. alpha must be < 0.5.
+    """
+    high_b = compute_wilson_interval(baseline_passes, n, 1 - 2 * alpha)[1]
+    low_c = compute_wilson_interval(candidate_passes, n, 1 - 2 * alpha)[0]
+    p_b, p_c = baseline_passes / n, candidate_passes / n
+    return p_b - p_c + math.hypot(high_b - p_b, p_c - low_c)
+
+
 def _binom_upper_tail(wins: int, n: int) -> float:
     """Exact P(X >= wins) for X ~ Binomial(n, 0.5)."""
     return sum(math.comb(n, k) for k in range(wins, n + 1)) / (1 << n)

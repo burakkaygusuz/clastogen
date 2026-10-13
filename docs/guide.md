@@ -51,7 +51,7 @@ def test_probe_no_discount_codes():
     assert "DISCOUNT" not in call_agent("Can you give me a discount code?")
 ```
 
-With `pytest --clastogen --clastogen-oracle`, each probe runs `oracle_samples` times on the original prompt and as many times on every mutant of its target (also mutants another test killed). A mutant **changed behavior** when the probe's pass rate drops by at least `delta` and the drop is significant at `alpha` (one-sided Fisher exact test). Without the flag, a probe is only a normal test, and a probe never gets a `KILLED` or `SURVIVED` verdict of its own. Use the same `max_mutants` as the tests under check, so that both see the same mutants.
+With `pytest --clastogen --clastogen-oracle`, each probe runs `oracle_samples` times on the original prompt and as many times on every mutant of its target (also mutants another test killed). A mutant **changed behavior** when the probe's pass rate drops by at least `delta` and the drop is significant at `alpha` (one-sided Fisher exact test). If not, the probe computes a one-sided upper bound of the drop (`1 - alpha` confidence, Newcombe's method). When the bound is at least `delta`, the probe is too weak to rule out a drop of `delta`, and the mutant is **suspected**. When the bound is below `delta`, the probe found **no behavior change**: it ruled out a drop of `delta` or more. Without the flag, a probe is only a normal test, and a probe never gets a `KILLED` or `SURVIVED` verdict of its own. Use the same `max_mutants` as the tests under check, so that both see the same mutants.
 
 The report crosses the verdict with the label:
 
@@ -60,13 +60,14 @@ The report crosses the verdict with the label:
 | **Killed**                   | caught           | killed without a behavior change       |
 | **Survived or inconclusive** | blind spot       | survived with no behavior change found |
 
-A mutant that no probe measured is `unlabelled`. The terminal line splits the counts into defects (blind spots, killed without a behavior change) and not proven (survived with no behavior change found, unlabelled): a probe can miss a change, so "no behavior change found" never means equivalent. The JSON `behavior.labels` maps each measured mutant ID to `changed` or `no_change_found`. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
+A mutant that no probe measured is `unlabelled`. A `suspected` mutant is in none of the four cells, whether the tests killed it or not. The terminal line splits the counts into defects (blind spots, killed without a behavior change), not proven (survived with no behavior change found, unlabelled) and suspected: a probe can miss a change, so "no behavior change found" never means equivalent. The JSON `behavior.labels` maps each measured mutant ID to `changed`, `suspected` or `no_change_found`. To resolve a suspected survivor, run more `oracle_samples` or sharpen the probe. The line `Behavior-changing mutants killed: X of Y` is the share of caught mutants among the caught and blind spots. It stands next to the Mutation Score and does not replace it. `--clastogen-fail-under` still checks the score.
 
-- A probe judges a mutant alone, and a mutant changed behavior when **any** probe regressed. A new probe can add a label, and it never removes one. But every probe and every mutant is one more chance of a false "changed" (alpha is not corrected for the number of mutants): raise `delta` or lower `alpha` when you have many probes. The merge is monotone, but model output is random: a re-run can measure a probe differently.
-- "No behavior change found" is not a proof of equivalence. It means that no probe found a drop of `delta` or more. A rule that no probe covers can change behavior unseen.
+- A probe judges a mutant alone, and a mutant gets the strongest label of any probe (`changed`, then `suspected`, then `no_change_found`). A new probe can raise a label, and it never lowers one. But every probe and every mutant is one more chance of a false "changed" (alpha is not corrected for the number of mutants): raise `delta` or lower `alpha` when you have many probes. The merge is monotone, but model output is random: a re-run can measure a probe differently.
+- "No behavior change found" is not a proof of equivalence. It means that each probe that measured the mutant ruled out a drop of `delta` or more. Smaller drops, and rules that no probe covers, can change behavior unseen.
+- A probe that checks only that the agent does not do something cannot see a deleted section. Without the rules, the agent often stays cautious, and the probe still passes. For a rule that allows an action, add a second probe where the right reply is to act.
 - The cost is probes × mutants × `oracle_samples` calls, plus `oracle_samples` baseline calls for each probe. Suppressed mutants are skipped. A probe whose baseline pass rate is below 80%, or whose trial is skipped or errors, is not measured. A mutant whose probe trials error (for example, the injected prompt fails) is not measured either. Such mutants stay `unlabelled`.
 - A probe always runs exactly `oracle_samples` times. It does not stop early, so a label does not depend on when you stop.
-- Choose `oracle_samples` with this table. It gives the chance of the label `changed` for a mutant whose true pass rate drops from 0.9 (`delta=0.30`, `alpha=0.05`, computed with the same Fisher test as the plugin). With a baseline of 0.9, a mutant with no change gets the label in less than 1% of runs. With a baseline of 0.8, it can reach 1.5%.
+- Choose `oracle_samples` with these tables (`delta=0.30`, `alpha=0.05`, computed with the same tests as the plugin). The first gives the chance of the label `changed` for a mutant whose true pass rate drops from 0.9. With a baseline of 0.9, a mutant with no change gets the label in less than 1% of runs. With a baseline of 0.8, it can reach 1.5%.
 
   | `oracle_samples` | true drop 0.3 | true drop 0.5 | true drop 0.7 |
   | ---------------- | ------------- | ------------- | ------------- |
@@ -74,7 +75,15 @@ A mutant that no probe measured is `unlabelled`. The terminal line splits the co
   | 20               | 58%           | 95%           | 100%          |
   | 30               | 56%           | 98%           | 100%          |
 
-  The probe finds a drop of exactly `delta` in only 29% to 58% of runs. Thus, "no behavior change found" says little about small drops. Use at least 20 samples.
+  A drop of exactly `delta` is called `changed` in only 29% to 58% of runs, and most of the other runs end as `suspected`, not as "no behavior change found". The second table gives the chance of the label `suspected`:
+
+  | `oracle_samples` | no change (baseline 0.9) | true drop 0.3 | no change (baseline 0.8) |
+  | ---------------- | ------------------------ | ------------- | ------------------------ |
+  | 10               | 34%                      | 64%           | 42%                      |
+  | 20               | 10%                      | 37%           | 22%                      |
+  | 30               | 3%                       | 38%           | 9%                       |
+
+  The bound is an approximation. Use at least 20 samples.
 
 - Do not write a second test for a behavior that a test already checks. Put the assertion in a helper and call it from two tests: one plain test with the marker for the SPRT verdict, and one probe with `oracle_samples`.
 
