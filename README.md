@@ -18,6 +18,8 @@ Clastogen breaks your system prompt on purpose and checks if your existing pytes
 
 If your tests still pass, you found a blind spot.
 
+**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants. An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
+
 ![Clastogen demo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/demo.gif)
 
 **Demo result: Mutation Score 60%.** The evals caught 3 of 5 prompt faults. 2 blind spots found.
@@ -43,6 +45,8 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 4. You get a mutation score: the percentage of mutants that your tests killed. Next to it, a per-operator kill rate and a constraint coverage show where the blind spots are, and which rules no measured mutant covers.
 
 LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
+
+A survivor is not always a blind spot: the model can keep its behavior without a rule. Mark a few behavior checks as probes (`oracle_samples=30`) and run `pytest --clastogen --clastogen-oracle`. Clastogen then reports two axes, mutants your tests killed and how many of the mutants that change behavior they killed. [Probes →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#probes-which-survivors-matter)
 
 ## Works with your existing evals
 

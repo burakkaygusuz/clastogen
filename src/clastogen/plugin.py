@@ -1,12 +1,11 @@
-import json
 import logging
 import tomllib
 from collections import Counter
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import ExitStack
 from dataclasses import asdict
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from _pytest.tmpdir import tmppath_result_key
@@ -19,13 +18,26 @@ from clastogen.models import (
     ClastogenPluginState,
     Mutant,
     MutantExecution,
+    MutantStatus,
     MutationSummary,
+    OracleRecord,
+    RecordsPayload,
     SPRTConfig,
 )
 from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
-from clastogen.reporting.render import STATUS_LABELS, render_html, render_markdown
-from clastogen.reporting.scoring import calls_line, coverage_line, operator_line, operator_rates, score_line, summarize
+from clastogen.reporting.render import STATUS_LABELS, render_html, render_json, render_markdown
+from clastogen.reporting.scoring import (
+    behavior_label,
+    calls_line,
+    coverage_line,
+    exposure_line,
+    operator_line,
+    score_line,
+    summarize,
+    survivor_tests,
+)
+from clastogen.stats.assertions import evaluate_regression
 from clastogen.stats.sprt import (
     BASELINE_RUNS,
     MIN_BASELINE_RATE,
@@ -34,7 +46,6 @@ from clastogen.stats.sprt import (
     estimate_p0,
     fixed_sample_size,
 )
-from clastogen.types import MutantStatus, RecordsPayload
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +135,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Run Clastogen mutation testing on marked LLM tests.",
     )
     group.addoption(
+        "--clastogen-oracle",
+        action="store_true",
+        default=False,
+        help="With --clastogen, run the probe tests (oracle_samples=N) on every mutant to label which ones change behavior.",
+    )
+    group.addoption(
         "--clastogen-fail-under",
         action="store",
         type=float,
@@ -178,29 +195,16 @@ class _RecordCollector:
             self._state.marked_tests_count += 1
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
-            self._state.results.extend(
-                MutantExecution(
-                    test_id=r["test_id"],
-                    target=r["target"],
-                    mutant_id=r["mutant_id"],
-                    description=r["description"],
-                    operator_name=r["operator_name"],
-                    original_snippet=r["original_snippet"],
-                    mutated_snippet=r["mutated_snippet"],
-                    status=MutantStatus(r["status"]),
-                    sample_count=r["sample_count"],
-                    llr=r["llr"],
-                    error=r["error"],
-                    fixed_n=r["fixed_n"],
-                )
-                for r in records["results"]
-            )
+            self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
+            for r in records["results"]:
+                fields: dict[str, Any] = {**r, "status": MutantStatus(r["status"])}
+                self._state.results.append(MutantExecution(**fields))
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10): Run Clastogen on target prompt.",
+        "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10, oracle_samples=None): Run Clastogen on target prompt; oracle_samples=N makes the test a behavior probe.",
     )
     suppressed = load_suppressions(config.rootpath) if config.getoption("--clastogen") else set()
     state = ClastogenPluginState(suppressed_mutants=suppressed)
@@ -302,15 +306,20 @@ def _execution(
     )
 
 
+def _inject(stack: ExitStack, mutant: Mutant) -> None:
+    """Patches the mutated prompt in for the life of stack; an injection failure becomes a TrialError."""
+    try:
+        stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
+    except Exception as exc:
+        raise TrialError(f"prompt injection failed: {type(exc).__name__}: {exc}") from exc
+
+
 def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExecution:
     """Runs the SPRT with the mutant injected; clastogen-side failures and unexpected test errors become ERROR."""
 
     try:
         with ExitStack() as stack:
-            try:
-                stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
-            except Exception as exc:
-                raise TrialError(f"prompt injection failed: {type(exc).__name__}: {exc}") from exc
+            _inject(stack, mutant)
             res = sprt.run_evaluator(lambda: _run_trial(item))
     except TrialSkipped:
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, item.nodeid)
@@ -334,14 +343,13 @@ def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExe
 
 
 def _run_mutation(
-    item: pytest.Item, marker: pytest.Mark, state: ClastogenPluginState
+    item: pytest.Item, params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
 ) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
     Records newly killed mutants in state so later tests skip them; returns (baselines, results, constraints),
     where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
     """
-    params, prompt_text = _parse_marker(item, marker)
     mutator = PromptMutator(target_symbol=params.target)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
@@ -377,14 +385,61 @@ def _run_mutation(
     return baselines, results, constraints
 
 
+def _run_oracle(
+    item: pytest.Item, params: ClastogenParams, samples: int, prompt_text: str, suppressed: set[str]
+) -> list[OracleRecord]:
+    """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
+
+    Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
+    a probe never removes a label.
+    """
+    mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
+    mutants = [m for m in mutants if m.id not in suppressed]
+    if not mutants:
+        return []
+    try:
+        baseline = [_run_trial(item) for _ in range(samples)]
+    except (TrialSkipped, TrialError) as exc:
+        logger.warning("Probe '%s' not measured: %s", item.nodeid, exc)
+        return []
+    if sum(baseline) / samples < MIN_BASELINE_RATE:
+        logger.warning("Probe '%s' is flaky (%d/%d passed), not measured.", item.nodeid, sum(baseline), samples)
+        return []
+
+    records: list[OracleRecord] = []
+    for mutant in mutants:
+        try:
+            with ExitStack() as stack:
+                _inject(stack, mutant)
+                candidate = [_run_trial(item) for _ in range(samples)]
+        except (TrialSkipped, TrialError) as exc:
+            logger.warning("Probe '%s' not measured on mutant [%s]: %s", item.nodeid, mutant.id, exc)
+            continue
+        res = evaluate_regression(
+            iter(baseline).__next__,
+            iter(candidate).__next__,
+            confidence=1 - params.alpha,
+            sample_count=samples,
+            paired=False,
+        )
+        drop = res.baseline_rate - res.candidate_rate
+        # The tolerance keeps a drop of exactly delta (e.g. 1.0 - 0.8 vs 0.2) from failing on float rounding.
+        records.append(OracleRecord(mutant.id, res.regressed and drop >= params.delta - 1e-9))
+    return records
+
+
 def _to_payload(
-    baselines: list[BaselineRecord], results: list[MutantExecution], constraints: list[list[str]]
+    baselines: Sequence[BaselineRecord] = (),
+    results: Sequence[MutantExecution] = (),
+    constraints: Sequence[list[str]] = (),
+    oracle: Sequence[OracleRecord] = (),
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
         "baselines": [asdict(b) for b in baselines],
         "results": [{**asdict(r), "status": str(r.status)} for r in results],
-        "constraints": constraints,
+        "constraints": list(constraints),
+        "oracle": [asdict(o) for o in oracle],
     }
 
 
@@ -400,7 +455,16 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     if not marker:
         return res
 
-    baselines, results, constraints = _run_mutation(item, marker, item.config.stash[STATE_KEY])
+    params, prompt_text = _parse_marker(item, marker)
+    state = item.config.stash[STATE_KEY]
+    if (samples := params.oracle_samples) is not None:
+        oracle = []
+        if item.config.getoption("--clastogen-oracle", False):
+            oracle = _run_oracle(item, params, samples, prompt_text, state.suppressed_mutants)
+        item.user_properties.append((_RECORDS_KEY, _to_payload(oracle=oracle)))
+        return res
+
+    baselines, results, constraints = _run_mutation(item, params, prompt_text, state)
     item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, results, constraints)))
     return res
 
@@ -428,33 +492,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
     state.results.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.results, state.constraints)
+    summary = summarize(state.results, state.constraints, state.oracle)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)
     if json_path:
-        out_dict = {
-            "mutation_score": summary.score,
-            "total_mutants": summary.total,
-            "counts": {status.value: n for status, n in summary.counts.items()},
-            "calls": summary.calls,
-            "fixed_calls": summary.fixed_calls,
-            "by_operator": {
-                op: {"killed": k, "measured": n, "kill_rate": k / n * 100.0}
-                for op, (k, n) in operator_rates(summary).items()
-            },
-            "constraint_coverage": {
-                "total": summary.constraints_total,
-                "killed": summary.constraints_killed,
-                "survived": summary.constraints_survived,
-                "percent": summary.coverage,
-                "untested": list(summary.untested),
-            },
-            "results": [asdict(r) for r in summary.results],
-            "executions": [asdict(r) for r in state.results],
-            "baselines": [{**asdict(b), "noisy": b.noisy} for b in state.baselines],
-        }
-        _write_report(json_path, json.dumps(out_dict, indent=2))
+        _write_report(json_path, render_json(summary, state.results, state.baselines))
 
     html_path = session.config.getoption("--clastogen-html", None)
     if html_path:
@@ -541,10 +584,7 @@ def _write_summary(
     short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.results}
     clashes = {n for n, c in Counter(short.values()).items() if c > 1}
     name = {t: t if n in clashes else n for t, n in short.items()}
-    passed_in: dict[str, list[str]] = {}
-    for e in state.results:
-        if e.status == MutantStatus.SURVIVED:
-            passed_in.setdefault(e.mutant_id, []).append(name[e.test_id])
+    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.results).items()}
 
     terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
     for r in sorted(summary.results, key=lambda r: order.index(r.status)):
@@ -561,6 +601,8 @@ def _write_summary(
             details.append(f"passed in {', '.join(passed_in[r.mutant_id])}")
         if r.error:
             details.append(f"[{r.error}]")
+        if label := behavior_label(summary, r.mutant_id):
+            details.append(label)
         terminalreporter.write_line(f"{STATUS_LABELS[r.status]:<14}  {'  '.join(details)}", **_STATUS_MARKUP[r.status])
         terminalreporter.write_line(f"    {r.description}", light=True)
 
@@ -588,6 +630,8 @@ def _write_summary(
     terminalreporter.write_line(score_line(summary), bold=True, green=ok is True, red=ok is False)
     if calls := calls_line(summary):
         terminalreporter.write_line(calls, light=True)
+    if line := exposure_line(summary):
+        terminalreporter.write_line(line, bold=True)
     if line := operator_line(summary):
         terminalreporter.write_line(line, light=True)
     if line := coverage_line(summary):
@@ -621,7 +665,15 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
     if not empty:
         _write_summary(terminalreporter, state, summary, fail_under)
     elif state.marked_tests_count > 0:
-        terminalreporter.write_line("Clastogen: 0 mutants generated across marked tests (check prompt constraints).")
+        if state.oracle:
+            hint = " Probes labelled mutants, but no suite test measured them."
+        elif config.getoption("--clastogen-oracle", False):
+            hint = ""
+        else:
+            hint = " Tests with oracle_samples are probes and run only with --clastogen-oracle."
+        terminalreporter.write_line(
+            f"Clastogen: 0 mutants generated across marked tests (check prompt constraints).{hint}"
+        )
     else:
         terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
     if not empty:

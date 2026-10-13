@@ -2,7 +2,7 @@
 
 from importlib.metadata import version
 
-from clastogen.models import Mutant, PassRateResult, RegressionResult, SPRTConfig, SPRTResult
+from clastogen.models import Decision, Mutant, PassRateResult, RegressionResult, SPRTConfig, SPRTResult
 from clastogen.mutation.injection import override_prompt
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import (
@@ -13,7 +13,6 @@ from clastogen.stats.assertions import (
     evaluate_regression,
 )
 from clastogen.stats.sprt import SPRT
-from clastogen.types import Decision
 
 __all__ = [
     "SPRT",

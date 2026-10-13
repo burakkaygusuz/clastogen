@@ -1,36 +1,15 @@
 from collections.abc import Iterable
+from typing import Any
 
-from clastogen.models import MutantExecution, MutationSummary
-from clastogen.types import MutantStatus
+from clastogen.models import MutantExecution, MutantStatus, MutationSummary, OracleRecord
 
 _RANK = {status: rank for rank, status in enumerate(MutantStatus)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
 
 
-def summarize(results: Iterable[MutantExecution], constraints: Iterable[tuple[str, str]] = ()) -> MutationSummary:
-    """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
-
-    constraints are the (target, rule) pairs extracted from the prompts; each is killed, survived (measured, never
-    killed) or untested (no mutant measured), whatever the score says.
-    """
-    merged: dict[str, MutantExecution] = {}
-    calls = fixed_calls = 0
-    for r in results:
-        if r.sample_count is not None and r.fixed_n is not None:
-            calls += r.sample_count
-            fixed_calls += r.fixed_n
-        current = merged.get(r.mutant_id)
-        if current is None or (_RANK[r.status], r.test_id) < (_RANK[current.status], current.test_id):
-            merged[r.mutant_id] = r
-
-    unique = tuple(merged[m_id] for m_id in sorted(merged))
-    counts = dict.fromkeys(MutantStatus, 0)
-    for r in unique:
-        counts[r.status] += 1
-
-    measurable = sum(counts[status] for status in MEASURED)
-    score = counts[MutantStatus.KILLED] / measurable * 100.0 if measurable else None
-
+def _constraint_coverage(
+    unique: tuple[MutantExecution, ...], constraints: Iterable[tuple[str, str]]
+) -> tuple[int, int, tuple[str, ...]]:
     killed_keys = {(r.target, r.original_snippet) for r in unique if r.status == MutantStatus.KILLED}
     measured_keys = {(r.target, r.original_snippet) for r in unique if r.status in MEASURED}
     killed = survived = 0
@@ -42,6 +21,43 @@ def summarize(results: Iterable[MutantExecution], constraints: Iterable[tuple[st
             survived += 1
         else:
             untested.append(key[1])
+    return killed, survived, tuple(untested)
+
+
+def summarize(
+    results: Iterable[MutantExecution],
+    constraints: Iterable[tuple[str, str]] = (),
+    oracle: Iterable[OracleRecord] = (),
+) -> MutationSummary:
+    """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
+
+    constraints are the (target, rule) pairs extracted from the prompts; each is killed, survived (measured, never
+    killed) or untested (no mutant measured), whatever the score says. A mutant changed behavior when any probe in
+    oracle regressed on it, so a probe added later can only add such labels.
+    """
+    behavior: dict[str, bool] = {}
+    for o in oracle:
+        behavior[o.mutant_id] = behavior.get(o.mutant_id, False) or o.regressed
+    merged: dict[str, MutantExecution] = {}
+    calls = fixed_calls = 0
+    for r in results:
+        if r.sample_count is not None and r.fixed_n is not None:
+            calls += r.sample_count
+            fixed_calls += r.fixed_n
+        current = merged.get(r.mutant_id)
+        if current is None or (_RANK[r.status], r.test_id) < (_RANK[current.status], current.test_id):
+            merged[r.mutant_id] = r
+
+    unique = tuple(merged[m_id] for m_id in sorted(merged))
+    behavior = {m_id: v for m_id, v in behavior.items() if m_id in merged and merged[m_id].status in MEASURED}
+    counts = dict.fromkeys(MutantStatus, 0)
+    for r in unique:
+        counts[r.status] += 1
+
+    measurable = sum(counts[status] for status in MEASURED)
+    score = counts[MutantStatus.KILLED] / measurable * 100.0 if measurable else None
+
+    killed, survived, untested = _constraint_coverage(unique, constraints)
     return MutationSummary(
         results=unique,
         counts=counts,
@@ -50,7 +66,68 @@ def summarize(results: Iterable[MutantExecution], constraints: Iterable[tuple[st
         fixed_calls=fixed_calls,
         constraints_killed=killed,
         constraints_survived=survived,
-        untested=tuple(untested),
+        untested=untested,
+        behavior=behavior,
+    )
+
+
+def survivor_tests(executions: Iterable[MutantExecution]) -> dict[str, list[str]]:
+    """Maps each mutant to every test that still passed with it."""
+    passed_in: dict[str, list[str]] = {}
+    for e in executions:
+        if e.status == MutantStatus.SURVIVED:
+            passed_in.setdefault(e.mutant_id, []).append(e.test_id)
+    return passed_in
+
+
+def behavior_label(summary: MutationSummary, mutant_id: str) -> str | None:
+    """Returns the oracle's label of a mutant, or None when no probe measured it.
+
+    The oracle can fail to find a drop but cannot prove there is none, so it never says "equivalent".
+    """
+    if mutant_id not in summary.behavior:
+        return None
+    return "behavior changed" if summary.behavior[mutant_id] else "no behavior change found"
+
+
+def exposure(summary: MutationSummary) -> dict[str, Any] | None:
+    """Crosses the measured mutants' kill status with the oracle's label (not killed includes INCONCLUSIVE).
+
+    Returns None when no probe ran. exposure_percent is the share of the behavior-changing mutants that were killed,
+    None when no mutant changed behavior.
+    """
+    if not summary.behavior:
+        return None
+    counts = dict.fromkeys(("caught", "blind_spots", "no_change_found", "false_kills", "unlabelled"), 0)
+    for r in summary.results:
+        if r.status not in MEASURED:
+            continue
+        killed = r.status == MutantStatus.KILLED
+        changed = summary.behavior.get(r.mutant_id)
+        if changed is None:
+            counts["unlabelled"] += 1
+        elif changed:
+            counts["caught" if killed else "blind_spots"] += 1
+        else:
+            counts["false_kills" if killed else "no_change_found"] += 1
+    changed_total = counts["caught"] + counts["blind_spots"]
+    return {**counts, "exposure_percent": counts["caught"] / changed_total * 100.0 if changed_total else None}
+
+
+def exposure_line(summary: MutationSummary) -> str | None:
+    """Returns the second axis next to the score, or None when no probe ran."""
+    if (e := exposure(summary)) is None:
+        return None
+    percent = e["exposure_percent"]
+    head = (
+        "Behavior-changing mutants killed: N/A (no mutant changed behavior)"
+        if percent is None
+        else f"Behavior-changing mutants killed: {e['caught']} of {e['caught'] + e['blind_spots']} ({percent:.1f}%)"
+    )
+    return (
+        f"{head}; defects: {e['blind_spots']} blind spots, {e['false_kills']} killed without a behavior change; "
+        f"not proven: {e['no_change_found']} survived with no behavior change found (no proof of equivalence), "
+        f"{e['unlabelled']} unlabelled (no probe measured them)"
     )
 
 

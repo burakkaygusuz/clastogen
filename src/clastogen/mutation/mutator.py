@@ -20,6 +20,11 @@ def _clip(text: str, limit: int) -> str:
     return head.rstrip(" ,.;:") + "…"
 
 
+def _word_table(*pairs: tuple[str, str]) -> tuple[tuple[re.Pattern[str], str], ...]:
+    """Compiles (regex fragment, replacement) pairs as case-insensitive whole-word patterns; fragments are not escaped."""
+    return tuple((re.compile(rf"\b{word}\b", re.IGNORECASE), new) for word, new in pairs)
+
+
 class PromptMutator:
     """Extracts load-bearing imperative constraints and generates targeted prompt mutants."""
 
@@ -34,52 +39,52 @@ class PromptMutator:
 
     SENTENCE_SPLIT_PATTERN = re.compile(r"\n+|(?<!\be\.g)(?<!\bi\.e)(?<!\betc)[.?!]\s+")
 
-    NEGATION_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
-        (re.compile(r"\bdo not\b", re.IGNORECASE), "do"),
-        (re.compile(r"\bdon't\b", re.IGNORECASE), "do"),
-        (re.compile(r"\bmust not\b", re.IGNORECASE), "must"),
-        (re.compile(r"\bmustn't\b", re.IGNORECASE), "must"),
-        (re.compile(r"\bnever\b", re.IGNORECASE), "always"),
-        (re.compile(r"\bcannot\b", re.IGNORECASE), "can"),
-        (re.compile(r"\bcan't\b", re.IGNORECASE), "can"),
-        (re.compile(r"\bshould not\b", re.IGNORECASE), "should"),
-        (re.compile(r"\bshouldn't\b", re.IGNORECASE), "should"),
-        (re.compile(r"\bshall not\b", re.IGNORECASE), "shall"),
-        (re.compile(r"\bmay not\b", re.IGNORECASE), "may"),
-        (re.compile(r"\balways\b", re.IGNORECASE), "never"),
-        (re.compile(r"\bmust\b", re.IGNORECASE), "must not"),
-        (re.compile(r"\bavoid\b", re.IGNORECASE), "prefer"),
+    NEGATION_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = _word_table(
+        (r"do not", "do"),
+        (r"don't", "do"),
+        (r"must not", "must"),
+        (r"mustn't", "must"),
+        (r"never", "always"),
+        (r"cannot", "can"),
+        (r"can't", "can"),
+        (r"should not", "should"),
+        (r"shouldn't", "should"),
+        (r"shall not", "shall"),
+        (r"may not", "may"),
+        (r"always", "never"),
+        (r"must", "must not"),
+        (r"avoid", "prefer"),
     )
 
-    WEAKENING_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
-        (re.compile(r"\bmust not\b", re.IGNORECASE), "should not"),
-        (re.compile(r"\bmustn't\b", re.IGNORECASE), "shouldn't"),
-        (re.compile(r"\bnever\b", re.IGNORECASE), "rarely"),
-        (re.compile(r"\balways\b", re.IGNORECASE), "usually"),
-        (re.compile(r"\bmust\b", re.IGNORECASE), "should"),
-        (re.compile(r"\bshall not\b", re.IGNORECASE), "should not"),
-        (re.compile(r"\bcannot\b", re.IGNORECASE), "should not"),
-        (re.compile(r"\bcan't\b", re.IGNORECASE), "shouldn't"),
-        (re.compile(r"\brequired\b", re.IGNORECASE), "recommended"),
-        (re.compile(r"\brequires\b", re.IGNORECASE), "recommends"),
-        (re.compile(r"\bonly\b", re.IGNORECASE), "preferably"),
+    WEAKENING_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = _word_table(
+        (r"must not", "should not"),
+        (r"mustn't", "shouldn't"),
+        (r"never", "rarely"),
+        (r"always", "usually"),
+        (r"must", "should"),
+        (r"shall not", "should not"),
+        (r"cannot", "should not"),
+        (r"can't", "shouldn't"),
+        (r"required", "recommended"),
+        (r"requires", "recommends"),
+        (r"only", "preferably"),
     )
 
-    COMPARATOR_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
-        (re.compile(r"\bno more than\b", re.IGNORECASE), "at least"),
-        (re.compile(r"\bno fewer than\b", re.IGNORECASE), "at most"),
-        (re.compile(r"\bat most\b", re.IGNORECASE), "at least"),
-        (re.compile(r"\bat least\b", re.IGNORECASE), "at most"),
-        (re.compile(r"\bfewer than\b", re.IGNORECASE), "more than"),
-        (re.compile(r"\bmore than\b", re.IGNORECASE), "fewer than"),
-        (re.compile(r"\bmaximum\b", re.IGNORECASE), "minimum"),
-        (re.compile(r"\bminimum\b", re.IGNORECASE), "maximum"),
+    COMPARATOR_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = _word_table(
+        (r"no more than", "at least"),
+        (r"no fewer than", "at most"),
+        (r"at most", "at least"),
+        (r"at least", "at most"),
+        (r"fewer than", "more than"),
+        (r"more than", "fewer than"),
+        (r"maximum", "minimum"),
+        (r"minimum", "maximum"),
     )
 
-    SCOPE_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
-        (re.compile(r"\b(?:all|every|each)\b", re.IGNORECASE), "some"),
-        (re.compile(r"\bboth\b", re.IGNORECASE), "either"),
-        (re.compile(r"\bany\b", re.IGNORECASE), "every"),
+    SCOPE_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = _word_table(
+        (r"(?:all|every|each)", "some"),
+        (r"both", "either"),
+        (r"any", "every"),
     )
 
     EXCEPTION_PATTERN = re.compile(r"(?<=\S),?\s+(?:unless|except)\b[^.;\n,]*", re.IGNORECASE)
