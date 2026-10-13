@@ -22,18 +22,21 @@ def test_override_prompt_inherited_attribute_clean_cleanup(monkeypatch: pytest.M
     class ChildAgent(BaseAgent):
         pass
 
+    def prompt() -> str:
+        return ChildAgent.PROMPT
+
     assert "PROMPT" not in ChildAgent.__dict__
-    assert ChildAgent.PROMPT == "Base safe prompt"
+    assert prompt() == "Base safe prompt"
 
     _register_module(monkeypatch, "dummy_mod_child", Child=ChildAgent)
     with override_prompt("dummy_mod_child:Child.PROMPT", "Mutated prompt"):
-        assert ChildAgent.PROMPT == "Mutated prompt"
+        assert prompt() == "Mutated prompt"
 
     assert "PROMPT" not in ChildAgent.__dict__
-    assert ChildAgent.PROMPT == "Base safe prompt"
+    assert prompt() == "Base safe prompt"
 
     BaseAgent.PROMPT = "Updated base prompt"
-    assert ChildAgent.PROMPT == "Updated base prompt"
+    assert prompt() == "Updated base prompt"
 
 
 def test_override_prompt_preserves_class_descriptors(monkeypatch: pytest.MonkeyPatch) -> None:

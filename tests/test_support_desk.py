@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 
 import oracle
 import pi_client
@@ -15,7 +16,7 @@ SECTIONS = 3
 
 
 @pytest.fixture
-def mutants() -> list[Mutant]:
+def mutants() -> Sequence[Mutant]:
     return PromptMutator(oracle.TARGET).generate_mutants(support_agent.SYSTEM_PROMPT, RULES + SECTIONS)
 
 
