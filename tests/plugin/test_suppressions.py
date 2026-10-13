@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -10,13 +12,10 @@ def _write_suppressions(root: Path, text: str) -> None:
     (root / ".clastogen" / "suppressions.toml").write_text(text, encoding="utf-8")
 
 
-def test_load_suppressions_empty_when_file_missing(tmp_path: Path) -> None:
-    assert load_suppressions(tmp_path) == set()
-
-
-@pytest.mark.parametrize("text", ["", "# no suppressions yet\n"])
-def test_load_suppressions_empty_file_suppresses_nothing(tmp_path: Path, text: str) -> None:
-    _write_suppressions(tmp_path, text)
+@pytest.mark.parametrize("text", [None, "", "# no suppressions yet\n"], ids=["missing", "empty", "comment"])
+def test_load_suppressions_empty_when_nothing_is_suppressed(tmp_path: Path, text: str | None) -> None:
+    if text is not None:
+        _write_suppressions(tmp_path, text)
     assert load_suppressions(tmp_path) == set()
 
 

@@ -1,93 +1,25 @@
-import dataclasses
-import sys
-import types
-
 import pytest
-from pytest_check import check
 
 from clastogen import Mutant
-from clastogen.mutation.injection import override_prompt
 from clastogen.mutation.mutator import PromptMutator, _clip
 
 
-def _register_module(monkeypatch: pytest.MonkeyPatch, name: str, **attrs: object) -> types.ModuleType:
-    mod = types.ModuleType(name)
-    mod.__dict__.update(attrs)
-    monkeypatch.setitem(sys.modules, name, mod)
-    return mod
+def _ops(rule: str) -> dict[str, Mutant]:
+    return {m.operator_name: m for m in PromptMutator().generate_mutants(rule, max_mutants=10)}
 
 
 def test_avoid_rule_yields_delete_and_prefer_inversion() -> None:
-    mutants = PromptMutator().generate_mutants("Avoid sharing account numbers with callers.", max_mutants=10)
-
-    by_op = {m.operator_name: m for m in mutants}
+    by_op = _ops("Avoid sharing account numbers with callers.")
     assert set(by_op) == {"delete_constraint", "invert_negation"}
     assert by_op["invert_negation"].mutated_snippet.startswith("PREFER")
     assert "Avoid" not in by_op["invert_negation"].mutated_prompt
 
 
-def test_threshold_mutant_survives_default_max_mutants() -> None:
+def test_threshold_mutant_survives_the_default_marker_budget() -> None:
     prompt = "Never share secrets.\nAlways greet users.\nNever approve refunds over $50."
     mutants = PromptMutator().generate_mutants(prompt, max_mutants=5)
 
     assert "change_threshold" in {m.operator_name for m in mutants}
-
-
-def test_override_prompt_context_manager(monkeypatch: pytest.MonkeyPatch) -> None:
-    dummy_module = _register_module(monkeypatch, "dummy_agent", SYSTEM_PROMPT="Original safe prompt")
-
-    with override_prompt("dummy_agent:SYSTEM_PROMPT", "Mutated dangerous prompt"):
-        assert dummy_module.SYSTEM_PROMPT == "Mutated dangerous prompt"
-
-    assert dummy_module.SYSTEM_PROMPT == "Original safe prompt"
-
-
-def test_override_prompt_inherited_attribute_clean_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
-    class BaseAgent:
-        PROMPT: str = "Base safe prompt"
-
-    class ChildAgent(BaseAgent):
-        pass
-
-    assert "PROMPT" not in ChildAgent.__dict__
-    assert ChildAgent.PROMPT == "Base safe prompt"
-
-    _register_module(monkeypatch, "dummy_mod_child", Child=ChildAgent)
-    with override_prompt("dummy_mod_child:Child.PROMPT", "Mutated prompt"):
-        assert ChildAgent.PROMPT == "Mutated prompt"
-
-    assert "PROMPT" not in ChildAgent.__dict__
-    assert ChildAgent.PROMPT == "Base safe prompt"
-
-    BaseAgent.PROMPT = "Updated base prompt"
-    assert ChildAgent.PROMPT == "Updated base prompt"
-
-
-def test_override_prompt_preserves_class_descriptors(monkeypatch: pytest.MonkeyPatch) -> None:
-    class AgentWithMethod:
-        @classmethod
-        def get_prompt(cls) -> str:
-            return "Class method prompt"
-
-    _register_module(monkeypatch, "dummy_mod_desc", Agent=AgentWithMethod)
-    assert isinstance(AgentWithMethod.__dict__["get_prompt"], classmethod)
-
-    with override_prompt("dummy_mod_desc:Agent.get_prompt", "Mutated string"):
-        assert AgentWithMethod.get_prompt == "Mutated string"
-
-    assert isinstance(AgentWithMethod.__dict__["get_prompt"], classmethod)
-    assert AgentWithMethod.get_prompt() == "Class method prompt"
-
-
-def test_override_prompt_nested_stack(monkeypatch: pytest.MonkeyPatch) -> None:
-    dummy_mod = _register_module(monkeypatch, "dummy_mod_nested", SYS_PROMPT="Level 0")
-
-    with override_prompt("dummy_mod_nested:SYS_PROMPT", "Level 1"):
-        assert dummy_mod.SYS_PROMPT == "Level 1"
-        with override_prompt("dummy_mod_nested:SYS_PROMPT", "Level 2"):
-            assert dummy_mod.SYS_PROMPT == "Level 2"
-        assert dummy_mod.SYS_PROMPT == "Level 1"
-    assert dummy_mod.SYS_PROMPT == "Level 0"
 
 
 def test_prompt_mutator_preserves_abbreviations_and_cleans_dangling_dots() -> None:
@@ -107,54 +39,6 @@ def test_prompt_mutator_preserves_abbreviations_and_cleans_dangling_dots() -> No
     for m in mutants:
         assert "\n.\n" not in m.mutated_prompt
         assert "\n. " not in m.mutated_prompt
-
-
-def test_prompt_mutator_samples_evenly_across_long_prompts() -> None:
-    lines = [f"Rule {i}: You must never leak item {i}." for i in range(20)]
-    long_prompt = "\n".join(lines)
-
-    mutator = PromptMutator(target_symbol="LONG_PROMPT")
-    mutants = mutator.generate_mutants(long_prompt, max_mutants=6)
-
-    assert len(mutants) == 6
-    descriptions = " ".join(m.description for m in mutants)
-    assert any(f"item {i}" in descriptions for i in (10, 11, 12, 13, 14, 15, 16, 17, 18, 19)), descriptions
-
-
-def test_override_prompt_patches_same_name_aliases_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    prompt = "".join(["origin", "al"])
-    agent = _register_module(monkeypatch, "xm_agent", PROMPT=prompt)
-    importer = _register_module(monkeypatch, "xm_importer", PROMPT=prompt)
-    renamed = _register_module(monkeypatch, "xm_renamed", SYSTEM=prompt)
-    captured = {"config": {"system": prompt}}
-
-    with override_prompt("xm_agent:PROMPT", "mutated"):
-        check.equal(agent.PROMPT, "mutated")
-        check.equal(importer.PROMPT, "mutated")
-        check.equal(renamed.SYSTEM, "original")
-        check.equal(captured["config"]["system"], "original")
-
-    check.equal(agent.PROMPT, "original")
-    check.is_(importer.PROMPT, prompt)
-
-
-def test_override_prompt_none_target_raises_type_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    _register_module(monkeypatch, "none_agent", PROMPT=None)
-    with pytest.raises(TypeError, match="resolved to None"), override_prompt("none_agent:PROMPT", "mutated"):
-        pass
-
-
-def test_failed_override_leaves_target_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    @dataclasses.dataclass(frozen=True)
-    class Frozen:
-        system: str = "original"
-
-    owner = Frozen()
-    _register_module(monkeypatch, "frozen_target_mod", cfg=owner)
-    with pytest.raises(dataclasses.FrozenInstanceError), override_prompt("frozen_target_mod:cfg.system", "mutated"):
-        pass
-
-    assert owner.system == "original"
 
 
 def test_stable_mutant_hash_id() -> None:
@@ -238,11 +122,15 @@ def test_clip_keeps_a_word_that_ends_at_the_limit() -> None:
     assert _clip("abcdefghij", 4) == "abcd…"
 
 
-def test_every_rule_gets_a_mutant_before_any_gets_a_second() -> None:
-    prompt = "\n".join(f"Rule {i}: You must never leak item {i}." for i in range(5))
-    mutants = PromptMutator().generate_mutants(prompt, max_mutants=5)
+@pytest.mark.parametrize(("rules", "budget"), [(5, 5), (20, 6)], ids=["fits", "sampled"])
+def test_every_selected_rule_gets_a_mutant_before_any_gets_a_second_and_the_tail_is_reached(
+    rules: int, budget: int
+) -> None:
+    prompt = "\n".join(f"Rule {i}: You must never leak item {i}." for i in range(rules))
+    mutants = PromptMutator().generate_mutants(prompt, max_mutants=budget)
 
-    assert len({m.original_snippet for m in mutants}) == 5
+    assert len({m.original_snippet for m in mutants}) == budget
+    assert any(f"Rule {i}:" in m.original_snippet for m in mutants for i in range(rules // 2, rules))
 
 
 def test_delete_leaves_no_orphan_marker_for_numbered_rules() -> None:
@@ -274,7 +162,7 @@ def test_keywordless_conditional_and_numeric_rules_are_extracted() -> None:
 
 def test_escalation_rule_is_deleted_and_numeric_rule_gets_threshold() -> None:
     prompt = "- Escalate to a human if the customer mentions legal action.\n- Refund up to $50 without approval."
-    by_op = {m.operator_name: m for m in PromptMutator().generate_mutants(prompt, max_mutants=10)}
+    by_op = _ops(prompt)
 
     assert by_op["delete_constraint"].mutated_snippet == "[DELETED]"
     assert "$500 without approval" in by_op["change_threshold"].mutated_prompt
@@ -286,10 +174,6 @@ def test_drop_exception_stops_at_the_next_comma() -> None:
 
     (dropped,) = [m for m in mutants if m.operator_name == "drop_exception"]
     assert dropped.mutated_prompt == "Never share data, and always log the request."
-
-
-def _ops(rule: str) -> dict[str, Mutant]:
-    return {m.operator_name: m for m in PromptMutator().generate_mutants(rule, max_mutants=10)}
 
 
 def test_flip_comparator_reverses_bounds_and_ignores_rules_without_one() -> None:

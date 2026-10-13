@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.mutation.structure import find_blocks
@@ -28,12 +29,8 @@ Agent: hello
 """
 
 
-def _spans(prompt: str) -> list[tuple[str, str]]:
-    return [(b.kind, prompt[b.start : b.end].splitlines()[0]) for b in find_blocks(prompt)]
-
-
 def test_blocks_follow_heading_levels_fences_and_example_tags() -> None:
-    assert _spans(PROMPT) == [
+    assert [(b.kind, PROMPT[b.start : b.end].splitlines()[0]) for b in find_blocks(PROMPT)] == [
         ("section", "# Policy"),
         ("section", "## Tone"),
         ("example", "# Examples"),
@@ -87,11 +84,9 @@ def test_deep_nesting_fences_and_identical_blocks_are_handled() -> None:
 
 
 def test_pathological_whitespace_stays_fast_and_long_numbers_stay_exact() -> None:
-    import time
-
     start = time.perf_counter()
     PromptMutator().generate_mutants("# x" + " " * 40_000 + "y\nYou must x" + " " * 40_000 + "y.", max_mutants=5)
     assert time.perf_counter() - start < 5.0  # quadratic scanning would take minutes
 
-    (m,) = PromptMutator().generate_mutants("You must send at most 123456789012345678901234567890123 items.", 1)[:1]
+    (m,) = PromptMutator().generate_mutants("You must send at most 123456789012345678901234567890123 items.", 1)
     assert "1234567890123456789012345678901230" in m.mutated_prompt

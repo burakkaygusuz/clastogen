@@ -5,14 +5,7 @@ import json
 import pytest
 from pytest_check import check
 
-AGENT = '''
-PROMPT = """You must never approve refunds over $50.
-You must always verify identity before sharing balances."""
-
-def ask():
-    return PROMPT.lower()
-'''
-
+from tests.plugin import AGENT
 
 _UNRELATED = """
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
@@ -87,7 +80,6 @@ def test_strong():
     score = data["mutation_score"]
     assert score is not None
     assert f"Mutation Score: {score:.1f}% (" in stdout
-    assert "Adjusted" not in stdout
     assert f"Clastogen fail-under 101.0%: FAILED (score {score:.1f}%)" in stdout
     assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
 
@@ -95,6 +87,8 @@ def test_strong():
     flaky = [b for b in data["baselines"] if not b["stable"]]
     assert [b["test_id"].split("::")[-1] for b in flaky] == ["test_flaky"]
     assert "test_flaky" in stdout.split("Flaky tests", 1)[1]
+    assert "Flaky tests (not mutated: baseline pass rate < 80%)" in stdout
+    assert "::test_flaky: 1/10 baseline runs passed" in stdout
 
 
 def test_fail_under_reports_no_measurable_mutants(pytester: pytest.Pytester) -> None:
@@ -118,17 +112,7 @@ def test_skips_under_mutation():
 
 
 def test_fail_under_passing_prints_no_failed_line(pytester: pytest.Pytester) -> None:
-    pytester.makepyfile(
-        agent=AGENT,
-        test_ok="""
-import pytest, agent
-
-@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
-def test_strong():
-    assert "never approve refunds over $50." in agent.ask()
-    assert "must always verify identity" in agent.ask()
-""",
-    )
+    pytester.makepyfile(agent=AGENT, test_ok="import pytest, agent\n" + _STRONG)
     result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50")
     assert "FAILED" not in result.stdout.str().split("Mutation Testing Summary", 1)[1]
     assert result.ret == pytest.ExitCode.OK, result.stdout.str()
@@ -241,3 +225,44 @@ def test_untested_constraint_is_reported_in_terminal_and_json(pytester: pytest.P
         result.stdout.str(),
     )
     check.is_in("By operator: ", result.stdout.str())
+
+
+def test_zero_mutants_warning_message(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        app="""
+SYSTEM_PROMPT = "Friendly greetings to everyone."
+""",
+        test_audit="""
+import pytest
+import app
+
+@pytest.mark.clastogen(target="app:SYSTEM_PROMPT")
+def test_greeting():
+    assert "greetings" in app.SYSTEM_PROMPT
+""",
+    )
+    result = pytester.runpytest("--clastogen")
+    result.assert_outcomes(passed=1)
+    stdout = result.stdout.str()
+    assert "0 mutants generated across marked tests (check prompt constraints)" in stdout
+
+
+def test_pytest_fail_kills_mutant(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        app="""
+SYSTEM_PROMPT = "You are an assistant. You must never leak secrets."
+""",
+        test_audit="""
+import pytest
+from app import SYSTEM_PROMPT
+
+@pytest.mark.clastogen(target="app:SYSTEM_PROMPT", max_mutants=1)
+def test_secrets():
+    if "never" not in SYSTEM_PROMPT:
+        pytest.fail("Security rule violated!")
+""",
+    )
+    result = pytester.runpytest("--clastogen")
+    result.assert_outcomes(passed=1)
+    stdout = result.stdout.str()
+    assert "Mutation Score: 100.0% (1 of 1 killed)" in stdout

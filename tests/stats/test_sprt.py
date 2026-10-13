@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 
 import pytest
 from pytest_check import check
@@ -6,21 +7,20 @@ from pytest_check import check
 from clastogen import SPRT, Decision, SPRTConfig
 from clastogen.stats.sprt import binom_cdf, fixed_sample_size
 
+CONFIG = SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60, max_steps=20)
+
 
 def test_wald_thresholds_and_llr_increments_exact() -> None:
-    sprt = SPRT(SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60))
+    sprt = SPRT(CONFIG)
 
     check.almost_equal(sprt.threshold_a, math.log(0.90 / 0.05))
     check.almost_equal(sprt.threshold_b, math.log(0.10 / 0.95))
     check.almost_equal(sprt.llr_pass, math.log(2.0 / 3.0))
     check.almost_equal(sprt.llr_fail, math.log(4.0))
-    check.greater(sprt.threshold_a, 0)
-    check.less(sprt.threshold_b, 0)
 
 
 def test_sprt_three_consecutive_fails_kills_at_step_three() -> None:
-    config = SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60, max_steps=20)
-    sprt = SPRT(config)
+    sprt = SPRT(CONFIG)
 
     observations = [False, False, False]
     result = sprt.run_evaluator(iter(observations).__next__)
@@ -31,8 +31,7 @@ def test_sprt_three_consecutive_fails_kills_at_step_three() -> None:
 
 
 def test_sprt_clean_passes_survives_at_step_six() -> None:
-    config = SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60, max_steps=20)
-    sprt = SPRT(config)
+    sprt = SPRT(CONFIG)
 
     clean_passes = [True] * 10
     result = sprt.run_evaluator(iter(clean_passes).__next__)
@@ -43,8 +42,7 @@ def test_sprt_clean_passes_survives_at_step_six() -> None:
 
 
 def test_sprt_inconclusive_when_truncated() -> None:
-    config = SPRTConfig(alpha=0.05, beta=0.10, p0=0.90, p1=0.60, max_steps=6)
-    sprt = SPRT(config)
+    sprt = SPRT(replace(CONFIG, max_steps=6))
 
     oscillating = [False, True, True, True, False, True]
     result = sprt.run_evaluator(iter(oscillating).__next__)
