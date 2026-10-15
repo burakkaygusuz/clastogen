@@ -102,14 +102,14 @@ A survivor can be harmless: the model can keep its behavior without the rule. A 
 4. Run `pytest --clastogen --clastogen-oracle --clastogen-json=clastogen.json`.
 5. Read `behavior.labels`. It maps a mutant ID to `"changed"`, `"suspected"` or `"no_change_found"`. Join it with `results` by `mutant_id`.
 
-| Label                        | Meaning                                                               | Action                                           |
-| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
-| Survived, behavior changed   | A blind spot: the agent acts differently and the tests do not notice. | Kill it. Refer to the section "Kill a survivor". |
-| Survived, suspected          | The probes cannot rule out a drop of `delta`.                         | Raise `oracle_samples` (20 or more) or sharpen the probe. |
-| Survived, no behavior change | The probes ruled out a drop of `delta` or more on their inputs. No proof.| Suppress it only if the user agrees.             |
-| Killed, suspected            | The tests kill it, and the probes cannot say if behavior changed.     | No action.                                       |
-| Killed, no behavior change   | The tests kill a mutant that changes nothing that the probes measure. | No action. The probes can miss a change.         |
-| No label                     | No probe measured the mutant.                                         | Add a probe for the rule, or leave the mutant.   |
+| Label                        | Meaning                                                                   | Action                                                    |
+| ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Survived, behavior changed   | A blind spot: the agent acts differently and the tests do not notice.     | Kill it. Refer to the section "Kill a survivor".          |
+| Survived, suspected          | The probes cannot rule out a drop of `delta`.                             | Raise `oracle_samples` (20 or more) or sharpen the probe. |
+| Survived, no behavior change | The probes ruled out a drop of `delta` or more on their inputs. No proof. | Suppress it only if the user agrees.                      |
+| Killed, suspected            | The tests kill it, and the probes cannot say if behavior changed.         | No action.                                                |
+| Killed, no behavior change   | The tests kill a mutant that changes nothing that the probes measure.     | No action. The probes can miss a change.                  |
+| No label                     | No probe measured the mutant.                                             | Add a probe for the rule, or leave the mutant.            |
 
 `behavior.exposure_percent` is the share of behavior-changing mutants that the tests killed. `--clastogen-fail-under` checks only the mutation score.
 
