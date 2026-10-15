@@ -106,7 +106,7 @@ A survivor can be harmless: the model can keep its behavior without the rule. A 
 | ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
 | Survived, behavior changed   | A blind spot: the agent acts differently and the tests do not notice. | Kill it. Refer to the section "Kill a survivor". |
 | Survived, suspected          | The probes cannot rule out a drop of `delta`.                         | Raise `oracle_samples` (20 or more) or sharpen the probe. |
-| Survived, no behavior change | The probes ruled out a drop of `delta` or more. This is not a proof.  | Suppress it only if the user agrees.             |
+| Survived, no behavior change | The probes ruled out a drop of `delta` or more on their inputs. No proof.| Suppress it only if the user agrees.             |
 | Killed, suspected            | The tests kill it, and the probes cannot say if behavior changed.     | No action.                                       |
 | Killed, no behavior change   | The tests kill a mutant that changes nothing that the probes measure. | No action. The probes can miss a change.         |
 | No label                     | No probe measured the mutant.                                         | Add a probe for the rule, or leave the mutant.   |
