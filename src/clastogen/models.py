@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict, get_args
 
 
 class Decision(StrEnum):
@@ -124,12 +124,21 @@ class BaselineRecord:
         return self.stable and self.successes / self.runs < NOISY_BASELINE_RATE
 
 
+# Weakest to strongest; probes merge to the strongest label. Plain strings, because execnet sends only builtins.
+Behavior = Literal["no_change_found", "suspected", "changed"]
+BEHAVIOR_ORDER: tuple[Behavior, ...] = get_args(Behavior)
+
+
 @dataclass(frozen=True)
 class OracleRecord:
-    """One probe test's verdict on one mutant: regressed is a significant pass rate drop of at least delta."""
+    """One probe test's verdict on one mutant.
+
+    changed is a significant pass rate drop of at least delta; suspected is no such drop, but a drop of delta is not
+    ruled out either (the upper bound of the drop is at least delta); no_change_found rules it out.
+    """
 
     mutant_id: str
-    regressed: bool
+    label: Behavior
 
 
 @dataclass(frozen=True)
@@ -137,7 +146,7 @@ class MutationSummary:
     """Order-independent aggregate of all mutant evaluations in a session.
 
     calls and fixed_calls sum sample_count and fixed_n over every sampled execution, not only the merged results.
-    behavior maps a mutant ID to whether any probe found a behavior change; mutants no probe measured are absent.
+    behavior maps a mutant ID to the strongest label of any probe; mutants no probe measured are absent.
     """
 
     results: tuple[MutantExecution, ...]
@@ -148,7 +157,7 @@ class MutationSummary:
     constraints_killed: int = 0
     constraints_survived: int = 0
     untested: tuple[str, ...] = ()
-    behavior: dict[str, bool] = field(default_factory=dict)
+    behavior: dict[str, Behavior] = field(default_factory=dict)
 
     @property
     def total(self) -> int:
@@ -183,8 +192,8 @@ class ClastogenParams:
     """Arguments of @pytest.mark.clastogen; p0=None measures the baseline instead of assuming it.
 
     oracle_samples makes the test a probe: with --clastogen-oracle it runs that many times on the original prompt and
-    on every mutant to find the mutants that change behavior (delta is the minimum drop, alpha the significance), and
-    it gets no SPRT verdict of its own.
+    on every mutant to find the mutants that change behavior (delta is the minimum drop, alpha the significance and
+    the one-sided confidence of the bound that rules a drop out), and it gets no SPRT verdict of its own.
     """
 
     target: str
@@ -224,16 +233,13 @@ class SPRTConfig:
     max_steps: int = 20
 
     def __post_init__(self) -> None:
-        if not (0.0 < self.alpha < 1.0):
-            raise ValueError(f"alpha must be in (0, 1), got {self.alpha}")
-        if not (0.0 < self.beta < 1.0):
-            raise ValueError(f"beta must be in (0, 1), got {self.beta}")
+        _check_unit("alpha", self.alpha)
+        _check_unit("beta", self.beta)
         if self.alpha + self.beta >= 1.0:
             raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
         if not (0.0 < self.p1 < self.p0 < 1.0):
             raise ValueError(f"Requirement 0 < p1 < p0 < 1 violated: p0={self.p0}, p1={self.p1}")
-        if isinstance(self.max_steps, bool) or not isinstance(self.max_steps, int) or self.max_steps < 1:
-            raise ValueError(f"max_steps must be an integer >= 1, got {self.max_steps}")
+        _check_int("max_steps", self.max_steps, 1)
 
     @classmethod
     def from_absolute_drop(

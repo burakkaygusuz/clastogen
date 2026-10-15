@@ -100,14 +100,16 @@ A survivor can be harmless: the model can keep its behavior without the rule. A 
    ```
 3. Use the same `max_mutants` as the other tests. A mutant that the tests do not measure gets no label in `results`.
 4. Run `pytest --clastogen --clastogen-oracle --clastogen-json=clastogen.json`.
-5. Read `behavior.labels`. It maps a mutant ID to `"changed"` or `"no_change_found"`. Join it with `results` by `mutant_id`.
+5. Read `behavior.labels`. It maps a mutant ID to `"changed"`, `"suspected"` or `"no_change_found"`. Join it with `results` by `mutant_id`.
 
-| Label                        | Meaning                                                               | Action                                           |
-| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------ |
-| Survived, behavior changed   | A blind spot: the agent acts differently and the tests do not notice. | Kill it. Refer to the section "Kill a survivor". |
-| Survived, no behavior change | The probes found no drop. This is not a proof.                        | Suppress it only if the user agrees.             |
-| Killed, no behavior change   | The tests kill a mutant that changes nothing that the probes measure. | No action. The probes can miss a change.         |
-| No label                     | No probe measured the mutant.                                         | Add a probe for the rule, or leave the mutant.   |
+| Label                        | Meaning                                                                   | Action                                                    |
+| ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Survived, behavior changed   | A blind spot: the agent acts differently and the tests do not notice.     | Kill it. Refer to the section "Kill a survivor".          |
+| Survived, suspected          | The probes cannot rule out a drop of `delta`.                             | Raise `oracle_samples` (20 or more) or sharpen the probe. |
+| Survived, no behavior change | The probes ruled out a drop of `delta` or more on their inputs. No proof. | Suppress it only if the user agrees.                      |
+| Killed, suspected            | The tests kill it, and the probes cannot say if behavior changed.         | No action.                                                |
+| Killed, no behavior change   | The tests kill a mutant that changes nothing that the probes measure.     | No action. The probes can miss a change.                  |
+| No label                     | No probe measured the mutant.                                             | Add a probe for the rule, or leave the mutant.            |
 
 `behavior.exposure_percent` is the share of behavior-changing mutants that the tests killed. `--clastogen-fail-under` checks only the mutation score.
 
@@ -131,7 +133,7 @@ Each entry must have a `reason`. If the file is not correct, a `--clastogen` run
 - **Do not assert on the prompt text.** An assertion such as `assert "$50" in SYSTEM_PROMPT` kills mutants, but it does not test the agent. Assert on the output or the actions of the agent.
 - **Cost.** Each marked test does 10 baseline runs. Then it does up to `max_steps` (20) runs for each of up to `max_mutants` (5) mutants. Thus, one marked test can make about 110 calls. A probe makes `oracle_samples` calls on the original prompt and as many on each mutant: about 180 calls for 30 samples and 5 mutants. With pytest-xdist (`-n`), each worker measures its own baselines, so the total is higher. Before a run with a paid API, ask the user. Start with one test.
 - **Clastogen does not mutate flaky tests.** If a test passes in less than 80% of its baseline runs, its `baselines` item has `"stable": false`. Clastogen makes no mutants for this test. Make the test more stable first. A flaky probe is also not measured.
-- **Without `--clastogen-oracle`, a probe is a normal test.** It gets no verdict and no label. Skipped or failing probe runs leave the mutants without a label. Each probe judges a mutant at its own `alpha` (default 0.05) and `delta`. More probes and more mutants give more false "behavior changed" labels. Raise `delta` to reduce them.
+- **Without `--clastogen-oracle`, a probe is a normal test.** It gets no verdict and no label. Skipped or erroring probe runs leave the mutants without a label. Each probe judges a mutant at its own `alpha` (default 0.05) and `delta`. More probes and more mutants give more false "behavior changed" labels. Raise `delta` to reduce them.
 - **Clastogen finds rules by their words, not by their meaning.** A sentence is a candidate if it has a word such as `must`, `never`, `always`, `only`, `avoid`, `if`, `unless`, `escalate` or `refuse`, or if it has a number. Sentences such as "You are a support agent" are not candidates. A rule such as "Respond in the customer's language" has none of these words, so it makes no mutant. If a rule is important, ask the user before you write it again with a clear word. If the summary shows no mutants, do the same.
 - **`results` shows one test for each mutant.** To see all tests that a survivor passed, filter `executions` by `mutant_id`.
 - **The mutant ID is a hash of the operator, the target and the texts.** If you change the words of a rule or the name of the target, the IDs change. Then the old suppressions do not apply. A new Clastogen version that finds more rules can also change the IDs.

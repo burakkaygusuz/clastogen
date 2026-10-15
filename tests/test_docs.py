@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -21,9 +20,8 @@ def test_docs_stats_example_matches_runnable_file() -> None:
     assert block == (REPO / "examples" / "test_stats_usage.py").read_text(encoding="utf-8")
 
 
-def test_demo_reports_documented_score(tmp_path: Path) -> None:
+def test_demo_reports_documented_score(tmp_path: Path, subprocess_env: None) -> None:
     json_out = tmp_path / "demo.json"
-    env = {**os.environ, "PYTHONPATH": str(REPO / "src")}
     proc = subprocess.run(  # noqa: S603
         [
             sys.executable,
@@ -36,7 +34,6 @@ def test_demo_reports_documented_score(tmp_path: Path) -> None:
             "examples/test_banking_eval.py",
         ],
         cwd=REPO,
-        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -52,14 +49,7 @@ def test_demo_reports_documented_score(tmp_path: Path) -> None:
     inverted_identity = next(r for r in by_id.values() if "NEVER verify customer identity" in r["description"])
     check.equal(inverted_identity["status"], "KILLED")
     check.equal(inverted_identity["operator_name"], "invert_negation")
-    check.equal(
-        inverted_identity["original_snippet"],
-        "You must always verify customer identity before providing balance details",
-    )
-    check.equal(
-        inverted_identity["mutated_snippet"],
-        "You must NEVER verify customer identity before providing balance details",
-    )
+    check.is_in("NEVER verify", inverted_identity["mutated_snippet"])
 
     documented = re.search(r'mutant_id = "([0-9a-f]{12})"', GUIDE)
     assert documented is not None

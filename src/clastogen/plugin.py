@@ -14,6 +14,7 @@ from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
     NOISY_BASELINE_RATE,
     BaselineRecord,
+    Behavior,
     ClastogenParams,
     ClastogenPluginState,
     Mutant,
@@ -37,7 +38,7 @@ from clastogen.reporting.scoring import (
     summarize,
     survivor_tests,
 )
-from clastogen.stats.assertions import evaluate_regression
+from clastogen.stats.assertions import drop_upper_bound, evaluate_regression
 from clastogen.stats.sprt import (
     BASELINE_RUNS,
     MIN_BASELINE_RATE,
@@ -131,44 +132,31 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         "--clastogen",
         action="store_true",
-        default=False,
         help="Run Clastogen mutation testing on marked LLM tests.",
     )
     group.addoption(
         "--clastogen-oracle",
         action="store_true",
-        default=False,
         help="With --clastogen, run the probe tests (oracle_samples=N) on every mutant to label which ones change behavior.",
     )
     group.addoption(
         "--clastogen-fail-under",
-        action="store",
         type=float,
-        default=None,
         metavar="MIN_SCORE",
         help="Fail test suite if the Mutation Score is below this threshold (0-100).",
     )
     group.addoption(
         "--clastogen-json",
-        action="store",
-        type=str,
-        default=None,
         metavar="PATH",
         help="Output Clastogen mutation testing results to a structured JSON file.",
     )
     group.addoption(
         "--clastogen-html",
-        action="store",
-        type=str,
-        default=None,
         metavar="PATH",
         help="Output a self-contained HTML report of Clastogen mutation testing results.",
     )
     group.addoption(
         "--clastogen-md",
-        action="store",
-        type=str,
-        default=None,
         metavar="PATH",
         help="Output a Markdown summary for GitHub job summaries and pull request comments.",
     )
@@ -391,7 +379,7 @@ def _run_oracle(
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
     Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
-    a probe never removes a label.
+    a probe never lowers a label. A drop the test is too weak to call is suspected, not unchanged.
     """
     mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
     mutants = [m for m in mutants if m.id not in suppressed]
@@ -424,7 +412,12 @@ def _run_oracle(
         )
         drop = res.baseline_rate - res.candidate_rate
         # The tolerance keeps a drop of exactly delta (e.g. 1.0 - 0.8 vs 0.2) from failing on float rounding.
-        records.append(OracleRecord(mutant.id, res.regressed and drop >= params.delta - 1e-9))
+        label: Behavior = "no_change_found"
+        if res.regressed and drop >= params.delta - 1e-9:
+            label = "changed"
+        elif drop_upper_bound(sum(baseline), sum(candidate), samples, params.alpha) >= params.delta - 1e-9:
+            label = "suspected"
+        records.append(OracleRecord(mutant.id, label))
     return records
 
 

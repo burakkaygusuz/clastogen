@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 
 import oracle
 import pi_client
@@ -14,10 +15,13 @@ RULES = 14
 SECTIONS = 3
 
 
-def test_every_policy_rule_and_section_is_a_mutation_lane() -> None:
-    mutator = PromptMutator(oracle.TARGET)
-    assert len(mutator.extract_candidate_rules(support_agent.SYSTEM_PROMPT)) == RULES
-    mutants = mutator.generate_mutants(support_agent.SYSTEM_PROMPT, RULES + SECTIONS)
+@pytest.fixture
+def mutants() -> Sequence[Mutant]:
+    return PromptMutator(oracle.TARGET).generate_mutants(support_agent.SYSTEM_PROMPT, RULES + SECTIONS)
+
+
+def test_every_policy_rule_and_section_is_a_mutation_lane(mutants: list[Mutant]) -> None:
+    assert len(PromptMutator(oracle.TARGET).extract_candidate_rules(support_agent.SYSTEM_PROMPT)) == RULES
     assert len(mutants) == RULES + SECTIONS
     assert {m.operator_name for m in mutants} >= {"delete_section", "delete_constraint", "change_threshold"}
 
@@ -97,9 +101,10 @@ def fake_complete(system: str, user: str) -> str:
     )
 
 
-def test_oracle_labels_every_mutant_of_a_rule_the_agent_obeys(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_oracle_labels_every_mutant_of_a_rule_the_agent_obeys(
+    monkeypatch: pytest.MonkeyPatch, mutants: list[Mutant]
+) -> None:
     monkeypatch.setattr(pi_client, "complete", fake_complete)
-    mutants = PromptMutator(oracle.TARGET).generate_mutants(support_agent.SYSTEM_PROMPT, RULES + SECTIONS)
     labels = oracle.label_all(mutants)
     unlabelled = {m.original_snippet.split(":")[0] for m in mutants if labels[m.id] is None}
     assert unlabelled == {
@@ -124,17 +129,17 @@ def test_oracle_finds_no_change_in_a_mutant_that_leaves_the_agent_alone(monkeypa
 
 
 @pytest.mark.parametrize(
-    ("killed", "changed", "expected"),
+    ("killed", "runs", "changed", "expected"),
     [
-        (3, True, "caught"),
-        (0, True, "blind spot"),
-        (0, False, "equivalent"),
-        (5, False, "false kill"),
-        (2, True, "caught"),
-        (1, None, "unlabelled"),
+        (3, 5, True, "caught"),
+        (0, 5, True, "blind spot"),
+        (0, 5, False, "equivalent"),
+        (5, 5, False, "false kill"),
+        (2, 4, True, "caught"),
+        (1, 5, None, "unlabelled"),
     ],
 )
 def test_quadrant_compares_the_majority_verdict_with_the_oracle(
-    killed: int, changed: bool | None, expected: str
+    killed: int, runs: int, changed: bool | None, expected: str
 ) -> None:
-    assert oracle.quadrant(killed, 5 if killed != 2 else 4, changed) == expected
+    assert oracle.quadrant(killed, runs, changed) == expected

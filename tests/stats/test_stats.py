@@ -11,6 +11,7 @@ from clastogen.stats.assertions import (
     assert_no_regression,
     assert_pass_rate,
     compute_wilson_interval,
+    drop_upper_bound,
     evaluate_pass_rate,
     evaluate_regression,
 )
@@ -39,6 +40,20 @@ def test_wilson_interval_edges_are_exact_for_any_z_rounding(monkeypatch: pytest.
 def test_wilson_interval_validations(args: tuple[float, ...], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         compute_wilson_interval(*args)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize(("n", "alpha"), [(5, 0.05), (20, 0.05), (30, 0.05), (20, 0.1)])
+def test_drop_upper_bound_of_two_perfect_groups_is_the_wilson_gap(n: int, alpha: float) -> None:
+    z2 = NormalDist().inv_cdf(1 - alpha) ** 2
+    assert drop_upper_bound(n, n, n, alpha) == pytest.approx(z2 / (n + z2))
+
+
+@given(st.integers(0, 20), st.integers(0, 20))
+def test_drop_upper_bound_covers_the_observed_drop_and_grows_with_failures(base: int, cand: int) -> None:
+    bound = drop_upper_bound(base, cand, 20)
+    assert bound >= (base - cand) / 20 - 1e-12
+    if cand > 0:
+        assert drop_upper_bound(base, cand - 1, 20) >= bound
 
 
 def _counting(outcome: bool) -> tuple[Callable[[], bool], list[int]]:
@@ -101,6 +116,20 @@ def test_evaluate_pass_rate_truncation_decides_by_llr_sign() -> None:
 def test_evaluate_pass_rate_rejects_invalid_arguments(kwargs: dict[str, float], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         evaluate_pass_rate(lambda: True, **kwargs)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [({"sample_count": 4}, "sample_count"), ({"confidence": 0.5}, "confidence"), ({"confidence": 1.0}, "confidence")],
+)
+def test_evaluate_regression_rejects_invalid_arguments(kwargs: dict[str, float], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        evaluate_regression(lambda: True, lambda: True, **kwargs)  # ty: ignore[invalid-argument-type]
+
+
+def test_the_assertions_return_their_result_when_nothing_fails() -> None:
+    assert assert_pass_rate(lambda: True).passed
+    assert not assert_no_regression(lambda: True, lambda: True, sample_count=5, paired=False).regressed
 
 
 def test_paired_mcnemar_p_value_is_exact_when_candidate_is_not_worse() -> None:

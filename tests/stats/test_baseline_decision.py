@@ -30,19 +30,12 @@ def test_flaky_baseline_is_rejected() -> None:
 
 
 def test_stable_baseline_yields_laplace_p0_config() -> None:
-    config = config_from_baseline([True] * 10, delta=0.30, max_steps=15)
+    config = config_from_baseline([True] * 10, delta=0.30, max_steps=15, alpha=0.01, beta=0.02)
 
     assert config is not None
     assert config.p0 == pytest.approx(11 / 12)
     assert config.p1 == pytest.approx(11 / 12 - 0.30)
-    assert config.max_steps == 15
-
-
-def test_alpha_beta_reach_config() -> None:
-    config = config_from_baseline([True] * 10, delta=0.30, max_steps=15, alpha=0.01, beta=0.02)
-
-    assert config is not None
-    assert (config.alpha, config.beta) == (0.01, 0.02)
+    assert (config.max_steps, config.alpha, config.beta) == (15, 0.01, 0.02)
 
 
 @pytest.mark.parametrize("true_p", [0.90, 0.95])

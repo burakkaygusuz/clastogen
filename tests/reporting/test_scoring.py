@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import random
 from dataclasses import replace
 
@@ -7,7 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from clastogen.models import MutantExecution, MutantStatus, MutationSummary, OracleRecord
+from clastogen.models import Behavior, MutantExecution, MutantStatus, MutationSummary, OracleRecord
 from clastogen.reporting.scoring import (
     behavior_label,
     calls_line,
@@ -45,9 +46,8 @@ PRECEDENCE = [
 ]
 
 
-@pytest.mark.parametrize("index", range(len(PRECEDENCE) - 1))
-def test_precedence_stronger_status_wins_in_either_order(index: int) -> None:
-    strong, weak = PRECEDENCE[index], PRECEDENCE[index + 1]
+@pytest.mark.parametrize(("strong", "weak"), list(itertools.pairwise(PRECEDENCE)), ids=lambda s: s.value)
+def test_precedence_stronger_status_wins_in_either_order(strong: MutantStatus, weak: MutantStatus) -> None:
     for records in (
         [_exec("m1", strong), _exec("m1", weak)],
         [_exec("m1", weak), _exec("m1", strong)],
@@ -164,16 +164,18 @@ def test_operator_rates_and_constraint_coverage() -> None:
     assert coverage_line(summarize([])) is None
 
 
-def _probe(mutant_id: str, regressed: bool) -> OracleRecord:
-    return OracleRecord(mutant_id, regressed)
+@pytest.mark.parametrize("order", list(itertools.permutations(("no_change_found", "suspected", "changed"))))
+def test_behavior_is_the_strongest_label_of_any_probe_in_any_order(order: tuple[Behavior, ...]) -> None:
+    summary = summarize([_exec("m1", MutantStatus.SURVIVED)], oracle=[OracleRecord("m1", x) for x in order])
+    assert summary.behavior == {"m1": "changed"}
 
 
-def test_behavior_is_changed_when_any_probe_regressed_in_either_order() -> None:
-    for oracle in (
-        [_probe("m1", True), _probe("m1", False)],
-        [_probe("m1", False), _probe("m1", True)],
-    ):
-        assert summarize([_exec("m1", MutantStatus.SURVIVED)], oracle=oracle).behavior == {"m1": True}
+def test_behavior_keeps_suspected_over_no_change_found() -> None:
+    pair = summarize(
+        [_exec("m1", MutantStatus.SURVIVED)],
+        oracle=[OracleRecord("m1", "no_change_found"), OracleRecord("m1", "suspected")],
+    )
+    assert pair.behavior == {"m1": "suspected"}
 
 
 def test_exposure_crosses_kill_status_with_behavior() -> None:
@@ -186,14 +188,18 @@ def test_exposure_crosses_kill_status_with_behavior() -> None:
             _exec("calm", MutantStatus.SURVIVED),
             _exec("none", MutantStatus.KILLED),
             _exec("err", MutantStatus.ERROR),
+            _exec("sus_killed", MutantStatus.KILLED),
+            _exec("sus_alive", MutantStatus.SURVIVED),
         ],
         oracle=[
-            _probe("caught", True),
-            _probe("blind", True),
-            _probe("unsure", True),
-            _probe("false", False),
-            _probe("calm", False),
-            _probe("err", True),
+            OracleRecord("caught", "changed"),
+            OracleRecord("blind", "changed"),
+            OracleRecord("unsure", "changed"),
+            OracleRecord("false", "no_change_found"),
+            OracleRecord("calm", "no_change_found"),
+            OracleRecord("err", "changed"),
+            OracleRecord("sus_killed", "suspected"),
+            OracleRecord("sus_alive", "suspected"),
         ],
     )
     counts = exposure(summary)
@@ -203,15 +209,17 @@ def test_exposure_crosses_kill_status_with_behavior() -> None:
         "blind_spots": 2,
         "no_change_found": 1,
         "false_kills": 1,
+        "suspected": 2,
         "unlabelled": 1,
     }
     assert counts["exposure_percent"] == pytest.approx(100 / 3)
     assert exposure_line(summary) == (
         "Behavior-changing mutants killed: 1 of 3 (33.3%); defects: 2 blind spots, 1 killed without a behavior "
         "change; not proven: 1 survived with no behavior change found (no proof of equivalence), "
-        "1 unlabelled (no probe measured them)"
+        "1 unlabelled (no probe measured them); suspected: 2 (a drop of delta is not ruled out)"
     )
     assert behavior_label(summary, "caught") == "behavior changed"
+    assert behavior_label(summary, "sus_alive") == "behavior suspected"
     assert behavior_label(summary, "calm") == "no behavior change found"
     assert behavior_label(summary, "none") is None
 
@@ -221,11 +229,15 @@ def test_no_probe_means_no_exposure_line() -> None:
 
 
 def test_exposure_is_not_applicable_when_no_mutant_changed_behavior() -> None:
-    summary = summarize([_exec("m1", MutantStatus.SURVIVED)], oracle=[_probe("m1", False)])
-    assert (exposure(summary) or {})["exposure_percent"] is None
+    summary = summarize([_exec("m1", MutantStatus.SURVIVED)], oracle=[OracleRecord("m1", "no_change_found")])
+    counts = exposure(summary)
+    assert counts is not None
+    assert counts["exposure_percent"] is None
     assert "N/A (no mutant changed behavior)" in str(exposure_line(summary))
 
 
 def test_behavior_labels_of_mutants_without_a_result_are_dropped() -> None:
-    summary = summarize([_exec("a", MutantStatus.KILLED)], oracle=[_probe("a", True), _probe("gone", True)])
-    assert summary.behavior == {"a": True}
+    summary = summarize(
+        [_exec("a", MutantStatus.KILLED)], oracle=[OracleRecord("a", "changed"), OracleRecord("gone", "changed")]
+    )
+    assert summary.behavior == {"a": "changed"}
