@@ -163,6 +163,38 @@ def assert_pass_rate(
     return res
 
 
+def _check_regression_args(sample_count: int, confidence: float) -> None:
+    if sample_count < 5:
+        raise ValueError(f"sample_count must be >= 5, got {sample_count}")
+    if not (0.5 < confidence < 1.0):
+        raise ValueError(f"confidence must be in (0.5, 1), got {confidence}")
+
+
+def compare_pass_counts(
+    baseline_passes: int,
+    candidate_passes: int,
+    sample_count: int,
+    confidence: float = 0.95,
+    description: str | None = None,
+) -> RegressionResult:
+    """Tests, one-sided with Fisher's exact test, whether the candidate's pass count is lower than the baseline's.
+
+    Both counts come from sample_count independent trials; use it when the outcomes are already recorded.
+    """
+    _check_regression_args(sample_count, confidence)
+    # Candidate worse than baseline <=> baseline passes more often.
+    p_val = _fisher_upper_tail(baseline_passes, candidate_passes, sample_count)
+    return RegressionResult(
+        regressed=p_val < 1.0 - confidence,
+        p_value=p_val,
+        test_name="fisher_exact",
+        baseline_rate=baseline_passes / sample_count,
+        candidate_rate=candidate_passes / sample_count,
+        sample_count=sample_count,
+        description=description,
+    )
+
+
 def evaluate_regression(
     baseline_fn: Callable[[], bool],
     candidate_fn: Callable[[], bool],
@@ -177,33 +209,28 @@ def evaluate_regression(
     pairs; it is only valid when both callables evaluate the same input within a trial (e.g. the same prompt,
     case or seed). Unpaired mode applies a one-sided Fisher exact test to the two pass/fail tables.
     """
-    if sample_count < 5:
-        raise ValueError(f"sample_count must be >= 5, got {sample_count}")
-    if not (0.5 < confidence < 1.0):
-        raise ValueError(f"confidence must be in (0.5, 1), got {confidence}")
+    _check_regression_args(sample_count, confidence)
 
-    alpha = 1.0 - confidence
+    if not paired:
+        return compare_pass_counts(
+            sum(check_outcome(baseline_fn()) for _ in range(sample_count)),
+            sum(check_outcome(candidate_fn()) for _ in range(sample_count)),
+            sample_count,
+            confidence,
+            description,
+        )
 
-    if paired:
-        pairs = [(check_outcome(baseline_fn()), check_outcome(candidate_fn())) for _ in range(sample_count)]
-        b_passes = sum(b for b, _ in pairs)
-        c_passes = sum(c for _, c in pairs)
-        b_wins = sum(b and not c for b, c in pairs)
-        discordant = b_wins + sum(c and not b for b, c in pairs)
-        p_val = _binom_upper_tail(b_wins, discordant) if discordant else 1.0
-        test_name = "mcnemar"
-    else:
-        b_passes = sum(check_outcome(baseline_fn()) for _ in range(sample_count))
-        c_passes = sum(check_outcome(candidate_fn()) for _ in range(sample_count))
-
-        # Candidate worse than baseline <=> baseline passes more often.
-        p_val = _fisher_upper_tail(b_passes, c_passes, sample_count)
-        test_name = "fisher_exact"
+    pairs = [(check_outcome(baseline_fn()), check_outcome(candidate_fn())) for _ in range(sample_count)]
+    b_passes = sum(b for b, _ in pairs)
+    c_passes = sum(c for _, c in pairs)
+    b_wins = sum(b and not c for b, c in pairs)
+    discordant = b_wins + sum(c and not b for b, c in pairs)
+    p_val = _binom_upper_tail(b_wins, discordant) if discordant else 1.0
 
     return RegressionResult(
-        regressed=p_val < alpha,
+        regressed=p_val < 1.0 - confidence,
         p_value=p_val,
-        test_name=test_name,
+        test_name="mcnemar",
         baseline_rate=b_passes / sample_count,
         candidate_rate=c_passes / sample_count,
         sample_count=sample_count,

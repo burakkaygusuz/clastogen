@@ -10,6 +10,7 @@ from hypothesis import strategies as st
 from clastogen.stats.assertions import (
     assert_no_regression,
     assert_pass_rate,
+    compare_pass_counts,
     compute_wilson_interval,
     drop_upper_bound,
     evaluate_pass_rate,
@@ -207,3 +208,29 @@ def test_unpaired_regression_is_one_sided() -> None:
     )
     assert not better.regressed
     assert better.p_value == pytest.approx(1.0)
+
+
+@given(
+    sample_count=st.integers(min_value=5, max_value=40),
+    baseline=st.data(),
+    confidence=st.floats(min_value=0.6, max_value=0.99),
+)
+def test_compare_pass_counts_matches_the_unpaired_evaluation(
+    sample_count: int, baseline: st.DataObject, confidence: float
+) -> None:
+    b = baseline.draw(st.lists(st.booleans(), min_size=sample_count, max_size=sample_count))
+    c = baseline.draw(st.lists(st.booleans(), min_size=sample_count, max_size=sample_count))
+
+    expected = evaluate_regression(
+        iter(b).__next__, iter(c).__next__, confidence=confidence, sample_count=sample_count, paired=False
+    )
+
+    assert compare_pass_counts(sum(b), sum(c), sample_count, confidence) == expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"), [({"sample_count": 4}, "sample_count"), ({"confidence": 0.5}, "confidence")]
+)
+def test_compare_pass_counts_rejects_invalid_arguments(kwargs: dict[str, float], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        compare_pass_counts(3, 3, **{"sample_count": 10, **kwargs})  # ty: ignore[invalid-argument-type]

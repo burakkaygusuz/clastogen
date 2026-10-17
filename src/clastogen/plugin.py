@@ -40,7 +40,7 @@ from clastogen.reporting.scoring import (
     summarize,
     survivor_tests,
 )
-from clastogen.stats.assertions import drop_upper_bound, evaluate_regression
+from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
 
 logger = logging.getLogger(__name__)
@@ -397,13 +397,7 @@ def _run_oracle(
         except (TrialSkipped, TrialError) as exc:
             logger.warning("Probe '%s' not measured on mutant [%s]: %s", item.nodeid, mutant.id, exc)
             continue
-        res = evaluate_regression(
-            iter(baseline).__next__,
-            iter(candidate).__next__,
-            confidence=1 - params.alpha,
-            sample_count=samples,
-            paired=False,
-        )
+        res = compare_pass_counts(sum(baseline), sum(candidate), samples, confidence=1 - params.alpha)
         drop = res.baseline_rate - res.candidate_rate
         # The tolerance keeps a drop of exactly delta (e.g. 1.0 - 0.8 vs 0.2) from failing on float rounding.
         label: Behavior = "no_change_found"
