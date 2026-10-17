@@ -171,3 +171,9 @@ def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState
         terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
     if not empty:
         terminalreporter.write_sep("=", bold=True)
+    # A subset of tests or a small max_mutants legitimately leaves entries unmatched, so this only warns.
+    unused = sorted(state.suppressed_mutants - {e.mutant_id for e in state.executions})
+    if unused and state.marked_tests_count > 0:
+        terminalreporter.write_line(
+            f"Suppressions matching no mutant in this run: {', '.join(unused)} (stale ID, or filtered out)", yellow=True
+        )
