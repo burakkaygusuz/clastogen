@@ -29,6 +29,7 @@ MAX_MUTANTS = pytestmark.kwargs["max_mutants"]
 REPEATS = 5
 LABELLINGS = 3  # the oracle is statistical too: borderline mutants flip between labellings
 WORKERS = 4
+RUN_TIMEOUT = 3 * 3600
 
 
 def run_once(repeat: int) -> None:
@@ -37,7 +38,7 @@ def run_once(repeat: int) -> None:
         return
     log = RESULTS / f"run_{repeat:02d}.log"
     with log.open("w") as f:
-        proc = subprocess.run(
+        proc = pi_client.run_group(
             [
                 sys.executable,
                 "-m",
@@ -48,9 +49,9 @@ def run_once(repeat: int) -> None:
                 "no:cacheprovider",
                 str(HERE / "test_suite.py"),
             ],
+            timeout=RUN_TIMEOUT,
             stdout=f,
             stderr=subprocess.STDOUT,
-            check=False,
         )
     # A failing test on the original prompt exits 1 but still writes the JSON; only a missing JSON is a crash.
     if not out.exists():

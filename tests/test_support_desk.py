@@ -143,3 +143,22 @@ def test_quadrant_compares_the_majority_verdict_with_the_oracle(
     killed: int, runs: int, changed: bool | None, expected: str
 ) -> None:
     assert oracle.quadrant(killed, runs, changed) == expected
+
+
+def test_run_group_kills_grandchildren_holding_the_pipe_on_timeout() -> None:
+    import subprocess
+    import time
+
+    start = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        pi_client.run_group(
+            ["sh", "-c", "sleep 60 & wait"], timeout=0.5, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+    assert time.monotonic() - start < 10
+
+
+def test_run_group_returns_output_and_exit_code() -> None:
+    import subprocess
+
+    proc = pi_client.run_group(["sh", "-c", "echo hi; exit 3"], timeout=10, stdout=subprocess.PIPE)
+    assert (proc.stdout, proc.returncode) == ("hi\n", 3)
