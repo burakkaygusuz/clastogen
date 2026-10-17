@@ -2,6 +2,8 @@
 
 pi gets no tools, extensions, context files, skills, prompt templates, themes, MCP servers or project-local
 files, so nothing except the system prompt and the user message reaches the model.
+
+POSIX only: a timeout kills the process group with os.killpg.
 """
 
 import json
