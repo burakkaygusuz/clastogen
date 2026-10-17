@@ -1,0 +1,35 @@
+name: Canary
+
+on:
+  schedule:
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-pre:
+    name: test (pytest pre-release)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+
+      - name: Install dependencies with latest pytest pre-release
+        run: |
+          uv sync --locked
+          uv pip install --upgrade --prerelease allow pytest
+
+      - name: Run test suite
+        run: uv run --no-sync pytest
+
+      - name: Run examples under Clastogen with pytest-xdist
+        run: uv run --no-sync pytest --clastogen -n 2 examples/
