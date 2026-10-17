@@ -320,9 +320,8 @@ def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExe
         res.cumulative_llr,
         item.nodeid,
     )
-    return _execution(
-        item, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed_sample_size(sprt.config)[0]
-    )
+    fixed = fixed_sample_size(sprt.config)
+    return _execution(item, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed[0] if fixed else None)
 
 
 def _run_mutation(
