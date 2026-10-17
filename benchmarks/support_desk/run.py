@@ -2,7 +2,7 @@
 
 Results go to results/<model>/. oracle.json and summary.* are committed; the raw runs (run_NN.*) are git-ignored.
 Every clastogen run is a separate serial `pytest --clastogen` process, so the Calls line is not inflated by
-workers that cannot see each other's kills. A run costs real LLM calls; finished runs are skipped on a rerun.
+workers that cannot see each other's kills. A run costs real LLM calls; a rerun refuses to start while earlier runs exist.
 
     PYTHONPATH=src:benchmarks/support_desk uv run python benchmarks/support_desk/run.py
 """
@@ -29,6 +29,7 @@ MAX_MUTANTS = pytestmark.kwargs["max_mutants"]
 REPEATS = 5
 LABELLINGS = 3  # the oracle is statistical too: borderline mutants flip between labellings
 WORKERS = 4
+RUN_TIMEOUT = 3 * 3600
 
 
 def run_once(repeat: int) -> None:
@@ -37,7 +38,7 @@ def run_once(repeat: int) -> None:
         return
     log = RESULTS / f"run_{repeat:02d}.log"
     with log.open("w") as f:
-        proc = subprocess.run(
+        proc = pi_client.run_group(
             [
                 sys.executable,
                 "-m",
@@ -48,9 +49,9 @@ def run_once(repeat: int) -> None:
                 "no:cacheprovider",
                 str(HERE / "test_suite.py"),
             ],
+            timeout=RUN_TIMEOUT,
             stdout=f,
             stderr=subprocess.STDOUT,
-            check=False,
         )
     # A failing test on the original prompt exits 1 but still writes the JSON; only a missing JSON is a crash.
     if not out.exists():
@@ -75,7 +76,7 @@ def quadrant(killed: int, runs: int, labels: list[bool | None]) -> str:
     return oracle.quadrant(killed, runs, labels[0])
 
 
-def summarize(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
+def aggregate(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
     runs = [json.loads(p.read_text()) for p in sorted(RESULTS.glob("run_*.json"))]
     verdicts: dict[str, list[str]] = {}
     descriptions: dict[str, str] = {}
@@ -113,7 +114,7 @@ def summarize(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
 def markdown(info: dict[str, Any], s: dict[str, Any]) -> str:
     lines = [
         f"Model `{info['model']}` through pi {info['pi']}, clastogen {info['clastogen']}, "
-        f"commit `{info['git_commit'][:9]}`{' (dirty)' if info['git_dirty'] else ''}, {info['date']}.",
+        f"commit `{info['git_commit'][:9]}`, started {info['date']}.",
         "",
         f"{s['runs']} runs. Mutation Score {s['score']['mean']}% (min {s['score']['min']}, max {s['score']['max']}), "
         f"constraint coverage {s['constraint_coverage_percent']['mean']}%, "
@@ -136,11 +137,14 @@ def markdown(info: dict[str, Any], s: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    provenance = {**pi_client.provenance(), "repeats": REPEATS}
     RESULTS.mkdir(parents=True, exist_ok=True)
+    if any(RESULTS.glob("run_*.json")):
+        raise RuntimeError(f"{RESULTS} holds runs from an earlier commit: delete run_*.json first")
     with ThreadPoolExecutor(WORKERS) as pool:
         list(pool.map(run_once, range(1, REPEATS + 1)))
-    summary = summarize(label_mutants())
-    document = {"provenance": {**pi_client.provenance(), "repeats": REPEATS}, **summary}
+    summary = aggregate(label_mutants())
+    document = {"provenance": provenance, **summary}
     (RESULTS / "summary.json").write_text(json.dumps(document, indent=2) + "\n")
     (RESULTS / "summary.md").write_text(markdown(document["provenance"], summary))
     print((RESULTS / "summary.md").read_text())

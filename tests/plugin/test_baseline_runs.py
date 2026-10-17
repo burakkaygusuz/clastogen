@@ -50,9 +50,9 @@ def test_breaks():
     [
         (
             'raise RuntimeError("boom")',
-            "unexpected execution error: RuntimeError: boom",
+            "unexpected execution error: RuntimeError",
             "ERROR",
-            "baseline: unexpected execution error: RuntimeError: boom",
+            "baseline: unexpected execution error: RuntimeError",
         ),
         ('pytest.skip("flaky dependency")', "test skipped during baseline", "SKIPPED", None),
     ],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, TypedDict, get_args
@@ -30,11 +31,16 @@ class RecordsPayload(TypedDict):
     """Records of one marked test; execnet serializes only exact builtin types, so statuses travel as plain str."""
 
     baselines: list[dict[str, Any]]
-    results: list[dict[str, Any]]
+    executions: list[dict[str, Any]]
     constraints: list[list[str]]
     oracle: list[dict[str, Any]]
 
 
+# Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
+BASELINE_RUNS = 10
+MIN_BASELINE_RATE = 0.80
+# Laplace estimate at the fewest passes an accepted baseline can have.
+MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE_RUNS + 2)
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90
 
@@ -177,7 +183,7 @@ class MutationSummary:
 class ClastogenPluginState:
     """Type-safe state stored in pytest config.stash."""
 
-    results: list[MutantExecution] = field(default_factory=list)
+    executions: list[MutantExecution] = field(default_factory=list)
     baselines: list[BaselineRecord] = field(default_factory=list)
     oracle: list[OracleRecord] = field(default_factory=list)
     summary: MutationSummary | None = None
@@ -218,6 +224,10 @@ class ClastogenParams:
             raise ValueError(f"alpha must be < 0.5 for a probe, got {self.alpha}")
         if self.p0 is not None and self.delta >= self.p0:
             raise ValueError(f"delta must be < p0, got delta={self.delta}, p0={self.p0}")
+        if self.p0 is None and self.oracle_samples is None and self.delta >= MIN_BASELINE_P0:
+            raise ValueError(
+                f"delta must be < {MIN_BASELINE_P0:.2f}, the lowest p0 an accepted baseline can measure, got delta={self.delta}"
+            )
         if self.alpha + self.beta >= 1.0:
             raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
 

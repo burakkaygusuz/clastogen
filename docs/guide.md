@@ -15,6 +15,7 @@
 - **Flags:**
   - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
   - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text goes to the log. Mutated prompt text still appears in the reports, so review them before you publish them.
   - `--clastogen-oracle`: runs the probe tests on every mutant to label which mutants change behavior. See [Probes](#probes-which-survivors-matter). The JSON then has a `behavior` section.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
   - `--clastogen-md PATH`: writes a short Markdown summary: the score and one table of mutants. Use it for GitHub job summaries and pull request comments. See [CI](../README.md#ci).
@@ -138,6 +139,8 @@ reason = "Model refuses large refunds regardless of the prompt"
 ```
 
 If the file is not correct, a `--clastogen` run stops with a usage error. Runs without `--clastogen` do not read the file.
+
+An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mutants` or the tests you ran) is listed in a warning; the exit code does not change.
 
 ## Known limitations
 

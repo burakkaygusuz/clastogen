@@ -28,11 +28,12 @@ in its prompt gives the expected labels and confusion table.
 
 ## Result
 
-Model `openrouter/deepseek/deepseek-v4.1-flash` through pi 1.1.0, clastogen 0.6.0. Full table:
+Model `openrouter/deepseek/deepseek-v4.1-flash` through pi 1.3.0 pinned to the `deepinfra/fp8` provider, clastogen 0.8.0, commit `9e20fb196`, 2026-10-17. The
+labels in `oracle.json` come from an earlier labelling with clastogen 0.6.0, which the new runs reuse. Full table:
 [`results/deepseek_deepseek-v4.1-flash/summary.md`](results/deepseek_deepseek-v4.1-flash/summary.md).
 
-- Mutation Score **27.1%** (26.5–29.4 over 5 runs), constraint coverage 30%, about 2,100 calls per run
-  (about 68 minutes), no noisy baseline in any run.
+- Mutation Score **27.1%** (26.5–29.4 over 5 runs), constraint coverage 28.6%, about 2,100 calls per run
+  (about 55 minutes), no noisy baseline in any run.
 
 | Clastogen \ oracle | Behavior changed | Behavior not changed |
 | --- | --- | --- |

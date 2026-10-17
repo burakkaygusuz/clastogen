@@ -18,7 +18,7 @@ Clastogen breaks your system prompt on purpose and checks if your existing pytes
 
 If your tests still pass, you found a blind spot.
 
-**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants. An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
+**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants (clastogen 0.8.0, 5 runs). An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
 
 ![Clastogen demo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/demo.gif)
 
@@ -44,7 +44,7 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 3. It runs your marked tests with each mutant. If a test fails, the mutant is **killed**. If all tests pass, the mutant **survived**: that is a blind spot.
 4. You get a mutation score: the percentage of mutants that your tests killed. Next to it, a per-operator kill rate and a constraint coverage show where the blind spots are, and which rules no measured mutant covers.
 
-LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
+LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. The error rates hold under assumptions: independent runs, a baseline p0 estimated from 10 runs, and a `max_steps` cutoff that can leave a mutant `INCONCLUSIVE`. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
 
 A survivor is not always a blind spot: the model can keep its behavior without a rule. Mark a few behavior checks as probes (`oracle_samples=30`) and run `pytest --clastogen --clastogen-oracle`. Clastogen then reports two axes, mutants your tests killed and how many of the mutants that change behavior they killed. [Probes →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#probes-which-survivors-matter)
 
@@ -134,7 +134,7 @@ The same results go to `reports/report.html`:
 
 ### Real models
 
-The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
+The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs, clastogen 0.8.0). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
 
 ---
 

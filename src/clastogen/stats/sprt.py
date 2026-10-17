@@ -4,13 +4,11 @@ import math
 from collections.abc import Callable, Sequence
 from functools import cache
 
-from clastogen.models import Decision, SPRTConfig, SPRTResult
+from clastogen.models import MIN_BASELINE_RATE, Decision, SPRTConfig, SPRTResult
 
 logger = logging.getLogger(__name__)
 
-# Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
-BASELINE_RUNS = 10
-MIN_BASELINE_RATE = 0.80
+MAX_FIXED_N = 2000
 
 
 def check_outcome(raw: object) -> bool:
@@ -27,29 +25,40 @@ def estimate_p0(outcomes: Sequence[bool]) -> float:
     return (sum(outcomes) + 1) / (len(outcomes) + 2)
 
 
+def _pmf(n: int, k: int, p: float) -> float:
+    """P(X = k) for X ~ Binomial(n, p), computed in log space so large n cannot overflow."""
+    log_comb = math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+    return math.exp(log_comb + k * math.log(p) + (n - k) * math.log1p(-p))
+
+
 def binom_cdf(n: int, c: int, p: float) -> float:
-    """Exact P(X <= c) for X ~ Binomial(n, p)."""
-    return sum(math.comb(n, k) * p**k * (1 - p) ** (n - k) for k in range(c + 1))
+    """P(X <= c) for X ~ Binomial(n, p)."""
+    return sum(_pmf(n, k, p) for k in range(c + 1))
 
 
 @cache
-def fixed_sample_size(config: SPRTConfig) -> tuple[int, int]:
+def fixed_sample_size(config: SPRTConfig) -> tuple[int, int] | None:
     """Smallest (n, c) of a one-sided binomial test with the SPRT's error rates: KILLED if passes <= c.
 
     Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta. Only c <= the largest alpha-feasible
     cutoff is allowed and a larger c only helps beta, so each n costs one pass; c is then the smallest feasible.
+    Returns None past MAX_FIXED_N, which bounds the O(n^2) scan.
     """
-    n = 1
-    while True:
+    for n in range(1, MAX_FIXED_N + 1):
         cutoff, cum = None, 0.0
         for c in range(n):
-            cum += math.comb(n, c) * config.p0**c * (1 - config.p0) ** (n - c)
+            cum += _pmf(n, c, config.p0)
             if cum > config.alpha:
                 break
             cutoff = c
-        if cutoff is not None and 1 - binom_cdf(n, cutoff, config.p1) <= config.beta:
-            return n, next(c for c in range(cutoff + 1) if 1 - binom_cdf(n, c, config.p1) <= config.beta)
-        n += 1
+        if cutoff is None:
+            continue
+        cum = 0.0
+        for c in range(cutoff + 1):
+            cum += _pmf(n, c, config.p1)
+            if 1 - cum <= config.beta:
+                return n, c
+    return None
 
 
 def config_from_baseline(

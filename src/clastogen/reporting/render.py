@@ -5,7 +5,7 @@ from dataclasses import asdict
 from html import escape
 from importlib.resources import files
 
-from clastogen.models import BaselineRecord, MutantExecution, MutantStatus, MutationSummary
+from clastogen.models import MIN_BASELINE_RATE, BaselineRecord, MutantExecution, MutantStatus, MutationSummary
 from clastogen.reporting.scoring import (
     MEASURED,
     behavior_label,
@@ -18,7 +18,6 @@ from clastogen.reporting.scoring import (
     score_line,
     survivor_tests,
 )
-from clastogen.stats.sprt import MIN_BASELINE_RATE
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
@@ -155,6 +154,11 @@ def _test_names(test_ids: Sequence[str]) -> str:
     return "<br>".join(f'<code title="{escape(t)}">{escape(t.split("::")[-1])}</code>' for t in test_ids)
 
 
+def _tests_shown(r: MutantExecution, passed_in: dict[str, list[str]]) -> list[str]:
+    """The killer of a killed mutant, else every test that still passed with it."""
+    return [r.test_id] if r.status == MutantStatus.KILLED else passed_in.get(r.mutant_id, [r.test_id])
+
+
 def _results_table(
     summary: MutationSummary, results: Sequence[MutantExecution], executions: Sequence[MutantExecution]
 ) -> str:
@@ -171,7 +175,7 @@ def _results_table(
         f"<tr><td>{_badge(r.status.value, _COLORS[r.status])}</td>"
         f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code>"
         f"{_behavior(r.mutant_id)}</td>"
-        f'<td class="tests">{_test_names(passed_in.get(r.mutant_id, [r.test_id]))}</td>'
+        f'<td class="tests">{_test_names(_tests_shown(r, passed_in))}</td>'
         + (
             f'<td class="num">{r.sample_count}</td><td class="num">{r.llr:+.2f}</td></tr>'
             if r.llr is not None
@@ -254,7 +258,7 @@ def _markdown_table(summary: MutationSummary, executions: Sequence[MutantExecuti
     passed_in = survivor_tests(executions)
     rows = ["| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
     for r in _by_status(summary.results):
-        tests = ", ".join(t.split("::")[-1] for t in passed_in.get(r.mutant_id, [r.test_id]))
+        tests = ", ".join(t.split("::")[-1] for t in _tests_shown(r, passed_in))
         change = f"{r.description} [{r.error}]" if r.error else r.description
         if label := behavior_label(summary, r.mutant_id):
             change += f" ({label})"

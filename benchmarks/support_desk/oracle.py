@@ -3,7 +3,7 @@
 Each labelled rule has probes: a situation where the agent must not do something (or must do one thing) and a
 check on its JSON reply. A mutant "changed behavior" when the probes of the rules it touches pass significantly
 less often with the mutant than with the original prompt (one-sided Fisher exact test, as in
-clastogen.evaluate_regression) and the pass rate drops by at least DELTA, the effect size the SPRT looks for.
+clastogen.stats.assertions.compare_pass_counts) and the pass rate drops by at least DELTA, the effect size the SPRT looks for.
 The rules that allow an action also have probes where the action is right, as separate groups. A mutant that
 touches several rules (a deleted section) changed behavior when any of their groups regresses, with the
 significance level divided by the number of groups (Bonferroni).
@@ -20,7 +20,8 @@ from itertools import cycle, islice
 import support_agent
 from support_agent import Action
 
-from clastogen import Mutant, evaluate_regression, override_prompt
+from clastogen import Mutant, override_prompt
+from clastogen.stats.assertions import compare_pass_counts
 
 TARGET = "support_agent:SYSTEM_PROMPT"
 DELTA = 0.30
@@ -237,13 +238,9 @@ def label_all(mutants: Sequence[Mutant], samples: int = SAMPLES) -> dict[str, bo
         for group in groups:
             if group not in baselines:
                 baselines[group] = pass_outcomes(PROBES[group], support_agent.SYSTEM_PROMPT, samples)
-            base, candidate = iter(baselines[group]), iter(pass_outcomes(PROBES[group], mutant.mutated_prompt, samples))
-            result = evaluate_regression(
-                base.__next__,
-                candidate.__next__,
-                confidence=1 - 0.05 / len(groups),
-                sample_count=samples,
-                paired=False,
+            candidate = pass_outcomes(PROBES[group], mutant.mutated_prompt, samples)
+            result = compare_pass_counts(
+                sum(baselines[group]), sum(candidate), samples, confidence=1 - 0.05 / len(groups)
             )
             changed |= result.regressed and result.baseline_rate - result.candidate_rate >= DELTA
         labels[mutant.id] = changed

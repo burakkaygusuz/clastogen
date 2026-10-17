@@ -9,8 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from clastogen import SPRT, Decision, SPRTConfig
+from clastogen.models import BASELINE_RUNS, MIN_BASELINE_RATE
 from clastogen.stats.assertions import compute_wilson_interval, evaluate_pass_rate
-from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, binom_cdf, config_from_baseline, fixed_sample_size
+from clastogen.stats.sprt import binom_cdf, config_from_baseline, fixed_sample_size
 
 FLOW_BASELINES = (0.70, 0.80, 0.90, 0.95, 0.99)
 FIXED_SIZES = (10, 20, 30, 50, 100)
@@ -177,7 +178,10 @@ def format_simulation_report(title: str, config: SPRTConfig, stats_list: list[Si
             f"{s.true_p:<8.2f} | {s.pct_killed:<10.2f} | {s.pct_survived:<11.2f} | "
             f"{s.pct_inconclusive:<14.2f} | {s.asn:<10.2f} | [{s.min_steps}, {s.max_steps}]{note}"
         )
-    n, c = fixed_sample_size(config)
+    fixed = fixed_sample_size(config)
+    if fixed is None:
+        raise ValueError(f"no fixed-N test within the sample cap for p0={config.p0:.3f}, p1={config.p1:.3f}")
+    n, c = fixed
     lines.extend(["-" * 80, f" Fixed-N test, same alpha/beta: N={n}, KILLED if passes <= {c}"])
     lines.extend(
         f" p={s.true_p:.2f}: SPRT ASN {s.asn:.2f} vs fixed {n}, saves {(1 - s.asn / n) * 100:.1f}%, "
