@@ -79,3 +79,19 @@ def test_reports_label_each_mutant_with_what_the_probe_found() -> None:
     assert "mutant m2 (behavior suspected)" in md
     assert "<em>behavior changed</em>" in html
     assert "<em>behavior suspected</em>" in html
+
+
+def test_killed_mutant_shows_its_killer_not_the_tests_it_survived() -> None:
+    executions = [
+        _execution("t.py::test_killer", "mixed", MutantStatus.KILLED),
+        _execution("t.py::test_bystander", "mixed", MutantStatus.SURVIVED),
+    ]
+    summary = summarize(executions)
+    html = render_html(summary, executions, [])
+    md = render_markdown(summary, executions, [])
+
+    table = html[html.index("<h2>Mutants</h2>") : html.index("</table>", html.index("<h2>Mutants</h2>"))]
+    assert "test_killer" in table
+    assert "test_bystander" not in table
+    assert "` test_killer `" in md
+    assert "test_bystander" not in md
