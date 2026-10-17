@@ -1,33 +1,26 @@
 import logging
 import tomllib
 from collections import Counter
-from collections.abc import Generator, Sequence
-from contextlib import ExitStack
-from dataclasses import asdict
+from collections.abc import Generator
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
-    BASELINE_RUNS,
     MIN_BASELINE_RATE,
     NOISY_BASELINE_RATE,
     BaselineRecord,
-    Behavior,
     ClastogenParams,
     ClastogenPluginState,
-    Mutant,
     MutantExecution,
     MutantStatus,
     MutationSummary,
     OracleRecord,
     RecordsPayload,
-    SPRTConfig,
 )
-from clastogen.mutation.injection import override_prompt, resolve_target
-from clastogen.mutation.mutator import PromptMutator
+from clastogen.mutation.injection import resolve_target
 from clastogen.reporting.render import STATUS_LABELS, render_html, render_json, render_markdown
 from clastogen.reporting.scoring import (
     behavior_label,
@@ -39,8 +32,7 @@ from clastogen.reporting.scoring import (
     summarize,
     survivor_tests,
 )
-from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
-from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
+from clastogen.runner import run_mutation, run_oracle, to_payload
 from clastogen.trial import run_trial
 
 logger = logging.getLogger(__name__)
@@ -50,7 +42,6 @@ STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
 SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
 _UNTESTED_SHOWN = 10
-_BASELINE_SKIPPED = "test skipped during baseline"
 
 
 def load_suppressions(root_path: Path) -> set[str]:
@@ -182,212 +173,6 @@ def _parse_marker(item: pytest.Item, marker: pytest.Mark) -> tuple[ClastogenPara
     return params, prompt_text
 
 
-def _measure_baseline(item: pytest.Item, params: ClastogenParams) -> tuple[BaselineRecord, SPRTConfig | None]:
-    """Reruns the passing test to estimate p0; the config is None when the baseline is too flaky or broken to mutate."""
-    outcomes = [True]
-    error: str | None = None
-    for _ in range(BASELINE_RUNS - 1):
-        try:
-            outcomes.append(run_trial(item))
-        except TrialSkipped:
-            error = _BASELINE_SKIPPED
-            break
-        except TrialError as exc:
-            logger.error("Baseline trial failed for test '%s': %s", item.nodeid, exc, exc_info=exc)
-            error = str(exc)
-            break
-
-    config = (
-        None
-        if error
-        else config_from_baseline(
-            outcomes, delta=params.delta, max_steps=params.max_steps, alpha=params.alpha, beta=params.beta
-        )
-    )
-    if config is None:
-        logger.warning(
-            "Baseline rejected (%d/%d passed, minimum %.0f%%) for test '%s' targeting '%s'%s.",
-            sum(outcomes),
-            len(outcomes),
-            MIN_BASELINE_RATE * 100,
-            item.nodeid,
-            params.target,
-            f": {error}" if error else "",
-        )
-    record = BaselineRecord(
-        test_id=item.nodeid,
-        target=params.target,
-        successes=sum(outcomes),
-        runs=len(outcomes),
-        p0=estimate_p0(outcomes),
-        stable=config is not None,
-        error=error,
-    )
-    return record, config
-
-
-def _execution(
-    item: pytest.Item,
-    mutant: Mutant,
-    status: MutantStatus,
-    sample_count: int | None = None,
-    llr: float | None = None,
-    error: str | None = None,
-    fixed_n: int | None = None,
-) -> MutantExecution:
-    return MutantExecution(
-        test_id=item.nodeid,
-        target=mutant.target_symbol,
-        mutant_id=mutant.id,
-        description=mutant.description,
-        operator_name=mutant.operator_name,
-        original_snippet=mutant.original_snippet,
-        mutated_snippet=mutant.mutated_snippet,
-        status=status,
-        sample_count=sample_count,
-        llr=llr,
-        error=error,
-        fixed_n=fixed_n,
-    )
-
-
-def _inject(stack: ExitStack, mutant: Mutant) -> None:
-    """Patches the mutated prompt in for the life of stack; an injection failure becomes a TrialError."""
-    try:
-        stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
-    except Exception as exc:
-        raise TrialError(f"prompt injection failed: {type(exc).__name__}: {exc}") from exc
-
-
-def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExecution:
-    """Runs the SPRT with the mutant injected; clastogen-side failures and unexpected test errors become ERROR."""
-
-    try:
-        with ExitStack() as stack:
-            _inject(stack, mutant)
-            res = sprt.run_evaluator(lambda: run_trial(item))
-    except TrialSkipped:
-        logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, item.nodeid)
-        return _execution(item, mutant, MutantStatus.SKIPPED)
-    except TrialError as exc:
-        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, item.nodeid, exc, exc_info=exc)
-        return _execution(item, mutant, MutantStatus.ERROR, error=str(exc))
-
-    status = MutantStatus(res.decision.value)
-    logger.debug(
-        "Mutant [%s] %s (%d runs, LLR=%.2f) in test '%s'",
-        mutant.id,
-        status,
-        res.sample_count,
-        res.cumulative_llr,
-        item.nodeid,
-    )
-    fixed = fixed_sample_size(sprt.config)
-    return _execution(item, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed[0] if fixed else None)
-
-
-def _run_mutation(
-    item: pytest.Item, params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
-) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
-    """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
-
-    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints),
-    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
-    """
-    mutator = PromptMutator(target_symbol=params.target)
-    constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
-    mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
-    mutants = [m for m in mutants if m.id not in state.killed_mutants]
-
-    executions = [_execution(item, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
-    pending = [m for m in mutants if m.id not in state.suppressed_mutants]
-    if not pending:
-        return [], executions, constraints
-
-    baselines: list[BaselineRecord] = []
-    if params.p0 is None:
-        baseline, config = _measure_baseline(item, params)
-        baselines.append(baseline)
-        # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
-        if baseline.error == _BASELINE_SKIPPED:
-            executions += [_execution(item, m, MutantStatus.SKIPPED) for m in pending]
-        elif baseline.error:
-            executions += [
-                _execution(item, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending
-            ]
-        if config is None:
-            return baselines, executions, constraints
-    else:
-        config = SPRTConfig.from_absolute_drop(
-            p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
-        )
-
-    sprt = SPRT(config)
-    for mutant in pending:
-        execution = _evaluate_mutant(item, mutant, sprt)
-        if execution.status == MutantStatus.KILLED:
-            state.killed_mutants.add(mutant.id)
-        executions.append(execution)
-    return baselines, executions, constraints
-
-
-def _run_oracle(
-    item: pytest.Item, params: ClastogenParams, samples: int, prompt_text: str, suppressed: set[str]
-) -> list[OracleRecord]:
-    """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
-
-    Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
-    a probe never lowers a label. A drop the test is too weak to call is suspected, not unchanged.
-    """
-    mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
-    mutants = [m for m in mutants if m.id not in suppressed]
-    if not mutants:
-        return []
-    try:
-        baseline = [run_trial(item) for _ in range(samples)]
-    except (TrialSkipped, TrialError) as exc:
-        logger.warning("Probe '%s' not measured: %s", item.nodeid, exc)
-        return []
-    if sum(baseline) / samples < MIN_BASELINE_RATE:
-        logger.warning("Probe '%s' is flaky (%d/%d passed), not measured.", item.nodeid, sum(baseline), samples)
-        return []
-
-    records: list[OracleRecord] = []
-    for mutant in mutants:
-        try:
-            with ExitStack() as stack:
-                _inject(stack, mutant)
-                candidate = [run_trial(item) for _ in range(samples)]
-        except (TrialSkipped, TrialError) as exc:
-            logger.warning("Probe '%s' not measured on mutant [%s]: %s", item.nodeid, mutant.id, exc)
-            continue
-        res = compare_pass_counts(sum(baseline), sum(candidate), samples, confidence=1 - params.alpha)
-        drop = res.baseline_rate - res.candidate_rate
-        # The tolerance keeps a drop of exactly delta (e.g. 1.0 - 0.8 vs 0.2) from failing on float rounding.
-        label: Behavior = "no_change_found"
-        if res.regressed and drop >= params.delta - 1e-9:
-            label = "changed"
-        elif drop_upper_bound(sum(baseline), sum(candidate), samples, params.alpha) >= params.delta - 1e-9:
-            label = "suspected"
-        records.append(OracleRecord(mutant.id, label))
-    return records
-
-
-def _to_payload(
-    baselines: Sequence[BaselineRecord] = (),
-    executions: Sequence[MutantExecution] = (),
-    constraints: Sequence[list[str]] = (),
-    oracle: Sequence[OracleRecord] = (),
-) -> RecordsPayload:
-    # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
-    return {
-        "baselines": [asdict(b) for b in baselines],
-        "executions": [{**asdict(r), "status": str(r.status)} for r in executions],
-        "constraints": list(constraints),
-        "oracle": [asdict(o) for o in oracle],
-    }
-
-
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     """Runs the mutation loop after the real test passed; a failing test propagates from the yield untouched."""
@@ -402,15 +187,16 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
 
     params, prompt_text = _parse_marker(item, marker)
     state = item.config.stash[STATE_KEY]
+    trial = partial(run_trial, item)
     if (samples := params.oracle_samples) is not None:
         oracle = []
         if item.config.getoption("--clastogen-oracle", False):
-            oracle = _run_oracle(item, params, samples, prompt_text, state.suppressed_mutants)
-        item.user_properties.append((_RECORDS_KEY, _to_payload(oracle=oracle)))
+            oracle = run_oracle(item.nodeid, trial, params, samples, prompt_text, state.suppressed_mutants)
+        item.user_properties.append((_RECORDS_KEY, to_payload(oracle=oracle)))
         return res
 
-    baselines, executions, constraints = _run_mutation(item, params, prompt_text, state)
-    item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, executions, constraints)))
+    baselines, executions, constraints = run_mutation(item.nodeid, trial, params, prompt_text, state)
+    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints)))
     return res
 
 
