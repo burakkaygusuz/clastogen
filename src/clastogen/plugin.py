@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from _pytest.tmpdir import tmppath_result_key
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
@@ -42,6 +41,7 @@ from clastogen.reporting.scoring import (
 )
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
+from clastogen.trial import run_trial
 
 logger = logging.getLogger(__name__)
 
@@ -82,44 +82,6 @@ def load_suppressions(root_path: Path) -> set[str]:
             )
         parsed.add(m_id)
     return parsed
-
-
-def _reset_function_fixtures(item: pytest.Item) -> None:
-    """Tears down and re-executes all function-scoped fixtures for honest, isolated trials."""
-    if not isinstance(item, pytest.Function):
-        raise RuntimeError(f"Cannot reset fixtures for '{item.nodeid}': only Python test functions are supported.")
-    req = item._request
-    fixture_defs = req._fixture_defs
-    for name, fixturedef in list(fixture_defs.items()):
-        if fixturedef.scope == "function":
-            # tmp_path teardown reads this key, which pytest only sets after the call phase finishes.
-            item.stash.setdefault(tmppath_result_key, {})
-            fixturedef.finish(request=req)  # ty: ignore[invalid-argument-type]  # finish only reads request.node, which TopRequest has
-            del fixture_defs[name]
-            new_val = req.getfixturevalue(name)
-            if name in item.funcargs:
-                item.funcargs[name] = new_val
-
-
-def _run_trial(item: pytest.Item) -> bool:
-    """Reruns the test on fresh fixtures: assertion failures are False, anything else unexpected is a TrialError."""
-    try:
-        _reset_function_fixtures(item)
-    except Exception as exc:
-        raise TrialError(f"fixture reset failed: {type(exc).__name__}: {exc}") from exc
-    try:
-        item.runtest()
-    except pytest.xfail.Exception as exc:
-        raise TrialSkipped from exc
-    except (AssertionError, pytest.fail.Exception):
-        return False
-    except pytest.skip.Exception as exc:
-        raise TrialSkipped from exc
-    except pytest.exit.Exception:
-        raise
-    except Exception as exc:
-        raise TrialError(f"unexpected execution error: {type(exc).__name__}: {exc}") from exc
-    return True
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -226,7 +188,7 @@ def _measure_baseline(item: pytest.Item, params: ClastogenParams) -> tuple[Basel
     error: str | None = None
     for _ in range(BASELINE_RUNS - 1):
         try:
-            outcomes.append(_run_trial(item))
+            outcomes.append(run_trial(item))
         except TrialSkipped:
             error = _BASELINE_SKIPPED
             break
@@ -303,7 +265,7 @@ def _evaluate_mutant(item: pytest.Item, mutant: Mutant, sprt: SPRT) -> MutantExe
     try:
         with ExitStack() as stack:
             _inject(stack, mutant)
-            res = sprt.run_evaluator(lambda: _run_trial(item))
+            res = sprt.run_evaluator(lambda: run_trial(item))
     except TrialSkipped:
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, item.nodeid)
         return _execution(item, mutant, MutantStatus.SKIPPED)
@@ -382,7 +344,7 @@ def _run_oracle(
     if not mutants:
         return []
     try:
-        baseline = [_run_trial(item) for _ in range(samples)]
+        baseline = [run_trial(item) for _ in range(samples)]
     except (TrialSkipped, TrialError) as exc:
         logger.warning("Probe '%s' not measured: %s", item.nodeid, exc)
         return []
@@ -395,7 +357,7 @@ def _run_oracle(
         try:
             with ExitStack() as stack:
                 _inject(stack, mutant)
-                candidate = [_run_trial(item) for _ in range(samples)]
+                candidate = [run_trial(item) for _ in range(samples)]
         except (TrialSkipped, TrialError) as exc:
             logger.warning("Probe '%s' not measured on mutant [%s]: %s", item.nodeid, mutant.id, exc)
             continue
