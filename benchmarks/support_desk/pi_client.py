@@ -71,12 +71,13 @@ def _pi_version() -> str:
 
 
 def provenance() -> dict[str, Any]:
-    """Everything needed to tell which code, harness and model produced a result."""
+    """Everything needed to tell which code, harness and model produced a result; refuses a dirty tree."""
+    if _git("status", "--porcelain"):
+        raise RuntimeError("working tree is dirty: commit or stash before a benchmark run")
     return {
         "date": datetime.now(UTC).isoformat(timespec="seconds"),
         "clastogen": version("clastogen"),
         "git_commit": _git("rev-parse", "HEAD"),
-        "git_dirty": bool(_git("status", "--porcelain")),
         "pi": _pi_version(),
         "model": MODEL,
         "pi_flags": PI_FLAGS,

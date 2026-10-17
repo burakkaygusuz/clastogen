@@ -2,7 +2,7 @@
 
 Results go to results/<model>/. oracle.json and summary.* are committed; the raw runs (run_NN.*) are git-ignored.
 Every clastogen run is a separate serial `pytest --clastogen` process, so the Calls line is not inflated by
-workers that cannot see each other's kills. A run costs real LLM calls; finished runs are skipped on a rerun.
+workers that cannot see each other's kills. A run costs real LLM calls; a rerun refuses to start while earlier runs exist.
 
     PYTHONPATH=src:benchmarks/support_desk uv run python benchmarks/support_desk/run.py
 """
@@ -114,7 +114,7 @@ def aggregate(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
 def markdown(info: dict[str, Any], s: dict[str, Any]) -> str:
     lines = [
         f"Model `{info['model']}` through pi {info['pi']}, clastogen {info['clastogen']}, "
-        f"commit `{info['git_commit'][:9]}`{' (dirty)' if info['git_dirty'] else ''}, {info['date']}.",
+        f"commit `{info['git_commit'][:9]}`, started {info['date']}.",
         "",
         f"{s['runs']} runs. Mutation Score {s['score']['mean']}% (min {s['score']['min']}, max {s['score']['max']}), "
         f"constraint coverage {s['constraint_coverage_percent']['mean']}%, "
@@ -137,11 +137,14 @@ def markdown(info: dict[str, Any], s: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    provenance = {**pi_client.provenance(), "repeats": REPEATS}
     RESULTS.mkdir(parents=True, exist_ok=True)
+    if any(RESULTS.glob("run_*.json")):
+        raise RuntimeError(f"{RESULTS} holds runs from an earlier commit: delete run_*.json first")
     with ThreadPoolExecutor(WORKERS) as pool:
         list(pool.map(run_once, range(1, REPEATS + 1)))
     summary = aggregate(label_mutants())
-    document = {"provenance": {**pi_client.provenance(), "repeats": REPEATS}, **summary}
+    document = {"provenance": provenance, **summary}
     (RESULTS / "summary.json").write_text(json.dumps(document, indent=2) + "\n")
     (RESULTS / "summary.md").write_text(markdown(document["provenance"], summary))
     print((RESULTS / "summary.md").read_text())
