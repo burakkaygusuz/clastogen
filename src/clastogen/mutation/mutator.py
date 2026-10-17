@@ -4,11 +4,23 @@ import re
 from collections.abc import Sequence
 from decimal import Decimal, localcontext
 from itertools import zip_longest
+from typing import NamedTuple
 
 from clastogen.models import Mutant
 from clastogen.mutation.structure import Block, find_blocks
 
 _LIST_MARKER = r"(?:[-*]|\d+[.)])\s+"
+
+
+class Rule(NamedTuple):
+    """A candidate rule and where it sits in the prompt, so edits hit that occurrence only."""
+
+    start: int
+    text: str
+
+    @property
+    def end(self) -> int:
+        return self.start + len(self.text)
 
 
 def _clip(text: str, limit: int) -> str:
@@ -94,29 +106,42 @@ class PromptMutator:
     def __init__(self, target_symbol: str = "SYSTEM_PROMPT") -> None:
         self.target_symbol = target_symbol
 
-    def extract_candidate_rules(self, prompt: str) -> list[str]:
-        """Extracts candidate load-bearing sentences: those with an obligation, condition or action word or a number, minus role statements."""
+    def _rule_spans(self, prompt: str) -> list[Rule]:
+        """Finds candidate load-bearing sentences with their positions: those with an obligation, condition or action word or a number, minus role statements."""
         if not isinstance(prompt, str):
             raise TypeError(f"prompt must be a string, got {type(prompt).__name__}")
-        return [
-            cleaned
-            for line in self.SENTENCE_SPLIT_PATTERN.split(prompt)
-            if (cleaned := re.sub(rf"^{_LIST_MARKER}", "", line.strip()))
-            and len(cleaned) > 10
-            and not self.ROLE_PATTERN.match(cleaned)
-            and self.RULE_PATTERN.search(cleaned)
-        ]
+        rules: list[Rule] = []
+        begin = 0
+        for sep in [*self.SENTENCE_SPLIT_PATTERN.finditer(prompt), None]:
+            line = prompt[begin : sep.start() if sep else len(prompt)]
+            stripped = line.strip()
+            marker = re.match(_LIST_MARKER, stripped)
+            skipped = len(line) - len(line.lstrip()) + (marker.end() if marker else 0)
+            cleaned = stripped[marker.end() if marker else 0 :]
+            if len(cleaned) > 10 and not self.ROLE_PATTERN.match(cleaned) and self.RULE_PATTERN.search(cleaned):
+                rules.append(Rule(begin + skipped, cleaned))
+            begin = sep.end() if sep else begin
+        return rules
 
-    def _delete_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def extract_candidate_rules(self, prompt: str) -> list[str]:
+        """Extracts the text of the candidate rules found by _rule_spans."""
+        return [rule.text for rule in self._rule_spans(prompt)]
+
+    def _delete_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Removes rule with its bullet and trailing punctuation; None when the prompt is unchanged."""
-        clean_pat = re.compile(rf"(?<![ \t])[ \t]*(?:{_LIST_MARKER})?{re.escape(rule)}[.?!]?([ \t]*)(\n?)")
-
-        def join(m: re.Match[str]) -> str:
-            if m.start() == 0 or prompt[m.start() - 1] == "\n":
-                return ""
-            return m[2] or ("" if m.end() == len(prompt) else " ")
-
-        mutated = clean_pat.sub(join, prompt).strip()
+        before = prompt[: rule.start]
+        trimmed = before.rstrip()  # stripping the whitespace run first keeps the bullet search linear
+        bullet = re.search(r"(?:[-*]|\d+[.)])$", trimmed)
+        head = (trimmed[: bullet.start()] if bullet and trimmed != before else before).rstrip(" \t")
+        after = prompt[rule.end :]
+        rest = re.sub(r"^[.?!]?[ \t]*\n?", "", after)
+        if not head or head.endswith("\n"):
+            joiner = ""
+        elif after[: len(after) - len(rest)].endswith("\n"):
+            joiner = "\n"
+        else:
+            joiner = " " if rest else ""
+        mutated = (head + joiner + rest).strip()
         mutated = re.sub(r"\n\s*\.\s*\n", "\n", mutated)
         mutated = re.sub(r"\n{3,}", "\n\n", mutated)
         if mutated == prompt:
@@ -124,76 +149,76 @@ class PromptMutator:
         return Mutant.create(
             target_symbol=self.target_symbol,
             operator_name="delete_constraint",
-            original_snippet=rule,
+            original_snippet=rule.text,
             mutated_snippet="[DELETED]",
             mutated_prompt=mutated,
-            description=f"Deleted constraint: '{_clip(rule, 60)}'",
+            description=f"Deleted constraint: '{_clip(rule.text, 60)}'",
         )
 
     def _replace_mutant(
         self,
         prompt: str,
-        rule: str,
+        rule: Rule,
         replacements: tuple[tuple[re.Pattern[str], str], ...],
         operator_name: str,
         verb: str,
     ) -> Mutant | None:
         """Applies the first matching replacement in rule; None when none applies."""
         for pattern, replacement in replacements:
-            if pattern.search(rule):
-                changed = pattern.sub(replacement.upper(), rule, count=1)
-                mutated = prompt.replace(rule, changed)
+            if pattern.search(rule.text):
+                changed = pattern.sub(replacement.upper(), rule.text, count=1)
+                mutated = prompt[: rule.start] + changed + prompt[rule.end :]
                 if mutated != prompt:
                     return Mutant.create(
                         target_symbol=self.target_symbol,
                         operator_name=operator_name,
-                        original_snippet=rule,
+                        original_snippet=rule.text,
                         mutated_snippet=changed,
                         mutated_prompt=mutated,
-                        description=f"{verb} constraint: '{_clip(rule, 45)}' -> '{_clip(changed, 45)}'",
+                        description=f"{verb} constraint: '{_clip(rule.text, 45)}' -> '{_clip(changed, 45)}'",
                     )
         return None
 
-    def _invert_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _invert_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Flips the first matching negation or obligation keyword in rule; None when none applies."""
         return self._replace_mutant(prompt, rule, self.NEGATION_REPLACEMENTS, "invert_negation", "Inverted")
 
-    def _weaken_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _weaken_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Softens the first matching hard keyword in rule into a suggestion; None when none applies."""
         return self._replace_mutant(prompt, rule, self.WEAKENING_REPLACEMENTS, "weaken_modal", "Weakened")
 
-    def _flip_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _flip_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Reverses the first comparator or ordering word in rule (at most becomes AT LEAST); None when none applies."""
         return self._replace_mutant(prompt, rule, self.COMPARATOR_REPLACEMENTS, "flip_comparator", "Flipped")
 
-    def _scope_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _scope_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Narrows the first universal quantifier in rule (all becomes SOME); None when none applies."""
         return self._replace_mutant(prompt, rule, self.SCOPE_REPLACEMENTS, "scope_swap", "Narrowed")
 
-    def _exception_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _exception_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Drops the first unless or except clause of rule, up to the next comma or semicolon; None when there is none."""
         return self._replace_mutant(prompt, rule, ((self.EXCEPTION_PATTERN, ""),), "drop_exception", "Dropped")
 
-    def _threshold_mutant(self, prompt: str, rule: str) -> Mutant | None:
+    def _threshold_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Multiplies the first number in rule by 10 (a $50 limit becomes $500); None when rule has no number."""
-        match = self.NUMBER_PATTERN.search(rule)
+        match = self.NUMBER_PATTERN.search(rule.text)
         if match is None:
             return None
         raw = match.group()
         with localcontext(prec=len(raw) + 2):  # the default 28 digits would round a long number
             scaled = Decimal(raw.replace(",", "")) * 10
         number = format(scaled, ",f" if "," in raw else "f")
-        changed = rule[: match.start()] + number + rule[match.end() :]
-        mutated = prompt.replace(rule, changed)
+        changed = rule.text[: match.start()] + number + rule.text[match.end() :]
+        mutated = prompt[: rule.start] + changed + prompt[rule.end :]
         if mutated == prompt:
             return None
         return Mutant.create(
             target_symbol=self.target_symbol,
             operator_name="change_threshold",
-            original_snippet=rule,
+            original_snippet=rule.text,
             mutated_snippet=changed,
             mutated_prompt=mutated,
-            description=f"Changed threshold: '{raw}' -> '{number}' in '{_clip(rule, 50)}'",
+            description=f"Changed threshold: '{raw}' -> '{number}' in '{_clip(rule.text, 50)}'",
         )
 
     def _block_mutant(self, prompt: str, block: Block) -> Mutant | None:
@@ -210,7 +235,7 @@ class PromptMutator:
             description=f"Deleted {block.kind}: '{_clip(block.label, 60)}'",
         )
 
-    def _eligible_blocks(self, prompt: str, rules: Sequence[str]) -> list[Block]:
+    def _eligible_blocks(self, prompt: str, rules: Sequence[Rule]) -> list[Block]:
         """Keeps examples and sections that hold a rule, and drops blocks over half of the prompt."""
         seen: set[str] = set()
         eligible: list[Block] = []
@@ -219,7 +244,7 @@ class PromptMutator:
             # Identical blocks share a mutant ID (it hashes the text, not the position), so only the first is kept.
             if (
                 len(text) * 2 <= len(prompt)
-                and (b.kind == "example" or any(rule in text for rule in rules))
+                and (b.kind == "example" or any(b.start <= rule.start and rule.end <= b.end for rule in rules))
                 and text not in seen
             ):
                 seen.add(text)
@@ -233,12 +258,13 @@ class PromptMutator:
         if max_mutants < 1:
             raise ValueError(f"max_mutants must be >= 1, got {max_mutants}")
 
-        candidates = list(dict.fromkeys(self.extract_candidate_rules(prompt)))
+        unique: dict[str, Rule] = {}  # a rule repeated verbatim yields one lane, its first occurrence
+        for rule in self._rule_spans(prompt):
+            unique.setdefault(rule.text, rule)
+        candidates = list(unique.values())
         blocks = self._eligible_blocks(prompt, candidates)
         # Rules and blocks share one lane list in prompt order so every kind stays reachable at a small budget.
-        lanes: list[str | Block] = sorted(
-            [*candidates, *blocks], key=lambda lane: lane.start if isinstance(lane, Block) else prompt.find(lane)
-        )
+        lanes: list[Rule | Block] = sorted([*candidates, *blocks], key=lambda lane: lane.start)
         if not lanes:
             return []
 

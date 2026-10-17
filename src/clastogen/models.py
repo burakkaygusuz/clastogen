@@ -39,7 +39,7 @@ class RecordsPayload(TypedDict):
 # Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
 BASELINE_RUNS = 10
 MIN_BASELINE_RATE = 0.80
-# Lowest p0 an accepted baseline can yield: the Laplace estimate (s + 1) / (n + 2) at the least passing count.
+# Laplace estimate at the fewest passes an accepted baseline can have.
 MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE_RUNS + 2)
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90

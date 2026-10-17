@@ -42,7 +42,7 @@ def fixed_sample_size(config: SPRTConfig) -> tuple[int, int] | None:
 
     Requires P(passes <= c | p0) <= alpha and P(passes > c | p1) <= beta. Only c <= the largest alpha-feasible
     cutoff is allowed and a larger c only helps beta, so each n costs one pass; c is then the smallest feasible.
-    Returns None when no n up to MAX_FIXED_N qualifies (the scan is O(n^2), so the cap bounds its cost).
+    Returns None past MAX_FIXED_N, which bounds the O(n^2) scan.
     """
     for n in range(1, MAX_FIXED_N + 1):
         cutoff, cum = None, 0.0

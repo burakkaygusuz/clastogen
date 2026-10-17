@@ -1,4 +1,6 @@
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from clastogen import Mutant
 from clastogen.mutation.mutator import PromptMutator, _clip
@@ -187,3 +189,48 @@ def test_flip_comparator_reverses_bounds_and_ignores_rules_without_one() -> None
 def test_scope_swap_matches_whole_words_only() -> None:
     assert _ops("Always check every ticket.")["scope_swap"].mutated_prompt == "Always check SOME ticket."
     assert "scope_swap" not in _ops("Never allow several retries.")
+
+
+REPEATED = "Never share the discount code.\nNever share the discount codes publicly."
+
+
+def test_deleting_a_rule_leaves_a_longer_rule_that_contains_it() -> None:
+    mutator = PromptMutator()
+    (first, second) = mutator._rule_spans(REPEATED)
+    mutant = mutator._delete_mutant(REPEATED, first)
+
+    assert mutant is not None
+    assert mutant.mutated_prompt == "Never share the discount codes publicly."
+    mutant = mutator._delete_mutant(REPEATED, second)
+    assert mutant is not None
+    assert mutant.mutated_prompt == "Never share the discount code."
+
+
+def test_inverting_the_second_rule_leaves_the_first_untouched() -> None:
+    mutator = PromptMutator()
+    second = mutator._rule_spans(REPEATED)[1]
+    mutant = mutator._invert_mutant(REPEATED, second)
+
+    assert mutant is not None
+    assert mutant.mutated_prompt == "Never share the discount code.\nALWAYS share the discount codes publicly."
+
+
+def test_an_edit_hits_only_the_rule_it_was_made_for() -> None:
+    prompt = "Do not share the code. Do not share the code word."
+    mutator = PromptMutator()
+    spans = mutator._rule_spans(prompt)
+
+    assert [prompt[r.start : r.end] for r in spans] == [r.text for r in spans]
+    assert [r.text for r in spans] == ["Do not share the code", "Do not share the code word."]
+    mutant = mutator._invert_mutant(prompt, spans[1])
+    assert mutant is not None
+    assert mutant.mutated_prompt == "Do not share the code. DO share the code word."
+
+
+@given(st.text(alphabet="Ab. \n-1)*,:nevrst", max_size=80))
+def test_rule_spans_agree_with_the_extracted_rules(prompt: str) -> None:
+    mutator = PromptMutator()
+    spans = mutator._rule_spans(prompt)
+
+    assert [r.text for r in spans] == mutator.extract_candidate_rules(prompt)
+    assert all(prompt[r.start : r.end] == r.text for r in spans)
