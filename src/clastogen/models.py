@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, TypedDict, get_args
@@ -35,6 +36,11 @@ class RecordsPayload(TypedDict):
     oracle: list[dict[str, Any]]
 
 
+# Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
+BASELINE_RUNS = 10
+MIN_BASELINE_RATE = 0.80
+# Lowest p0 an accepted baseline can yield: the Laplace estimate (s + 1) / (n + 2) at the least passing count.
+MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE_RUNS + 2)
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90
 
@@ -218,6 +224,10 @@ class ClastogenParams:
             raise ValueError(f"alpha must be < 0.5 for a probe, got {self.alpha}")
         if self.p0 is not None and self.delta >= self.p0:
             raise ValueError(f"delta must be < p0, got delta={self.delta}, p0={self.p0}")
+        if self.p0 is None and self.oracle_samples is None and self.delta >= MIN_BASELINE_P0:
+            raise ValueError(
+                f"delta must be < {MIN_BASELINE_P0:.2f}, the lowest p0 an accepted baseline can measure, got delta={self.delta}"
+            )
         if self.alpha + self.beta >= 1.0:
             raise ValueError(f"alpha + beta must be < 1, got alpha={self.alpha}, beta={self.beta}")
 

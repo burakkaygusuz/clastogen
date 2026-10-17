@@ -4,13 +4,9 @@ import math
 from collections.abc import Callable, Sequence
 from functools import cache
 
-from clastogen.models import Decision, SPRTConfig, SPRTResult
+from clastogen.models import MIN_BASELINE_RATE, Decision, SPRTConfig, SPRTResult
 
 logger = logging.getLogger(__name__)
-
-# Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
-BASELINE_RUNS = 10
-MIN_BASELINE_RATE = 0.80
 
 
 def check_outcome(raw: object) -> bool:

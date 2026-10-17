@@ -12,6 +12,8 @@ from _pytest.tmpdir import tmppath_result_key
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
+    BASELINE_RUNS,
+    MIN_BASELINE_RATE,
     NOISY_BASELINE_RATE,
     BaselineRecord,
     Behavior,
@@ -39,14 +41,7 @@ from clastogen.reporting.scoring import (
     survivor_tests,
 )
 from clastogen.stats.assertions import drop_upper_bound, evaluate_regression
-from clastogen.stats.sprt import (
-    BASELINE_RUNS,
-    MIN_BASELINE_RATE,
-    SPRT,
-    config_from_baseline,
-    estimate_p0,
-    fixed_sample_size,
-)
+from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
 
 logger = logging.getLogger(__name__)
 

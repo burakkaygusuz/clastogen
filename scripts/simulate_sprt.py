@@ -9,8 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from clastogen import SPRT, Decision, SPRTConfig
+from clastogen.models import BASELINE_RUNS, MIN_BASELINE_RATE
 from clastogen.stats.assertions import compute_wilson_interval, evaluate_pass_rate
-from clastogen.stats.sprt import BASELINE_RUNS, MIN_BASELINE_RATE, binom_cdf, config_from_baseline, fixed_sample_size
+from clastogen.stats.sprt import binom_cdf, config_from_baseline, fixed_sample_size
 
 FLOW_BASELINES = (0.70, 0.80, 0.90, 0.95, 0.99)
 FIXED_SIZES = (10, 20, 30, 50, 100)

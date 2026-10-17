@@ -5,7 +5,7 @@ from dataclasses import asdict
 from html import escape
 from importlib.resources import files
 
-from clastogen.models import BaselineRecord, MutantExecution, MutantStatus, MutationSummary
+from clastogen.models import MIN_BASELINE_RATE, BaselineRecord, MutantExecution, MutantStatus, MutationSummary
 from clastogen.reporting.scoring import (
     MEASURED,
     behavior_label,
@@ -18,7 +18,6 @@ from clastogen.reporting.scoring import (
     score_line,
     survivor_tests,
 )
-from clastogen.stats.sprt import MIN_BASELINE_RATE
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
