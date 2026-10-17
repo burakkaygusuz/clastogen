@@ -44,7 +44,7 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 3. It runs your marked tests with each mutant. If a test fails, the mutant is **killed**. If all tests pass, the mutant **survived**: that is a blind spot.
 4. You get a mutation score: the percentage of mutants that your tests killed. Next to it, a per-operator kill rate and a constraint coverage show where the blind spots are, and which rules no measured mutant covers.
 
-LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
+LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. The error rates hold under assumptions: independent runs, a baseline p0 estimated from 10 runs, and a `max_steps` cutoff that can leave a mutant `INCONCLUSIVE`. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
 
 A survivor is not always a blind spot: the model can keep its behavior without a rule. Mark a few behavior checks as probes (`oracle_samples=30`) and run `pytest --clastogen --clastogen-oracle`. Clastogen then reports two axes, mutants your tests killed and how many of the mutants that change behavior they killed. [Probes →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#probes-which-survivors-matter)
 
