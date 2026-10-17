@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 from collections.abc import Sequence
 
 import oracle
@@ -145,6 +146,7 @@ def test_quadrant_compares_the_majority_verdict_with_the_oracle(
     assert oracle.quadrant(killed, runs, changed) == expected
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="run_group kills the process group with os.killpg, POSIX only")
 def test_run_group_kills_grandchildren_holding_the_pipe_on_timeout() -> None:
     import subprocess
     import time
