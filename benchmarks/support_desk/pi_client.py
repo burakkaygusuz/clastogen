@@ -1,9 +1,10 @@
 """One real-model call through the pi coding-agent harness.
 
-pi gets no tools, extensions, context files, skills, prompt templates or MCP servers, so nothing
-except the system prompt and the user message reaches the model.
+pi gets no tools, extensions, context files, skills, prompt templates, themes, MCP servers or project-local
+files, so nothing except the system prompt and the user message reaches the model.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -24,6 +25,8 @@ PI_FLAGS = [
     "--no-skills",
     "--no-prompt-templates",
     "--no-mcp",
+    "--no-themes",
+    "--no-approve",
     "--offline",
     "--thinking",
     "off",
@@ -70,6 +73,15 @@ def _pi_version() -> str:
     return proc.stdout.strip()
 
 
+def _routing() -> dict[str, Any] | None:
+    """The OpenRouter provider pin pi applies to MODEL, read from pi's models.json."""
+    path = Path.home() / ".pi" / "agent" / "models.json"
+    if not path.exists() or not MODEL.startswith("openrouter/"):
+        return None
+    overrides = json.loads(path.read_text())["providers"]["openrouter"]["modelOverrides"]
+    return overrides.get(MODEL.removeprefix("openrouter/"), {}).get("compat", {}).get("openRouterRouting")
+
+
 def provenance() -> dict[str, Any]:
     """Everything needed to tell which code, harness and model produced a result; refuses a dirty tree."""
     if _git("status", "--porcelain"):
@@ -81,4 +93,5 @@ def provenance() -> dict[str, Any]:
         "pi": _pi_version(),
         "model": MODEL,
         "pi_flags": PI_FLAGS,
+        "openrouter_routing": _routing(),
     }
