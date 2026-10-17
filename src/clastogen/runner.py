@@ -41,7 +41,7 @@ def measure_baseline(
             error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
-            logger.error("Baseline trial failed for test '%s': %s", test_id, exc, exc_info=exc)
+            logger.error("Baseline trial failed for test '%s': %s", test_id, exc)
             error = str(exc)
             break
 
@@ -104,7 +104,7 @@ def _inject(stack: ExitStack, mutant: Mutant) -> None:
     try:
         stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
     except Exception as exc:
-        raise TrialError(f"prompt injection failed: {type(exc).__name__}: {exc}") from exc
+        raise TrialError(f"prompt injection failed: {type(exc).__name__}") from exc
 
 
 def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sprt: SPRT) -> MutantExecution:
@@ -118,7 +118,7 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.SKIPPED)
     except TrialError as exc:
-        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc, exc_info=exc)
+        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
         return _execution(test_id, mutant, MutantStatus.ERROR, error=str(exc))
 
     status = MutantStatus(res.decision.value)

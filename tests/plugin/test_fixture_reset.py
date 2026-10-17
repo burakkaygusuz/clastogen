@@ -36,10 +36,10 @@ def test_uses_resource(resource):
     assert data["results"], result.stdout.str()
     for r in data["results"]:
         check.equal(r["status"], "ERROR")
-        check.is_in("fixture reset failed: ValueError: boom", r["error"])
+        check.equal("fixture reset failed: ValueError", r["error"])
     uses = (pytester.path / "uses.txt").read_text(encoding="utf-8").split()
     check.equal(len(uses), len(set(uses)), f"a trial ran against a stale fixture value: {uses}")
-    check.is_in("fixture reset failed: ValueError: boom", result.stdout.str())
+    check.is_in("fixture reset failed: ValueError", result.stdout.str())
     check.is_not_in("INTERNALERROR", result.stdout.str())
 
 
@@ -100,10 +100,10 @@ def test_uses_resource(resource):
     (baseline,) = data["baselines"]
     check.equal(baseline["stable"], False)
     check.equal(baseline["runs"], 1)
-    check.is_in("fixture reset failed: ValueError: boom", baseline["error"])
+    check.equal("fixture reset failed: ValueError", baseline["error"])
     check.equal({r["status"] for r in data["results"]}, {"ERROR"})
     assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
-    assert "fixture reset failed: ValueError: boom" in result.stdout.str()
+    assert "fixture reset failed: ValueError" in result.stdout.str()
 
 
 def test_tmp_path_and_function_fixtures_reset_into_real_decisions(pytester: pytest.Pytester) -> None:
@@ -128,3 +128,28 @@ def test_captured(bot, tmp_path):
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert [r["status"] for r in data["results"]] == ["KILLED", "KILLED"]
     check.is_not_in("INTERNALERROR", result.stdout.str())
+
+
+def test_exception_text_stays_out_of_the_reports(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent='PROMPT = "You must never approve refunds over $50."\n',
+        test_leak="""
+import pytest, agent
+
+CALLS = []
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
+def test_leaks():
+    CALLS.append(1)
+    if len(CALLS) > 1:
+        raise RuntimeError("api key sk-SECRET-123")
+""",
+    )
+    paths = {"json": "out.json", "html": "out.html", "md": "out.md"}
+    result = pytester.runpytest("-rA", "--clastogen", *(f"--clastogen-{kind}={path}" for kind, path in paths.items()))
+    check.is_not_in("sk-SECRET-123", result.stdout.str())
+
+    for path in paths.values():
+        text = (pytester.path / path).read_text(encoding="utf-8")
+        check.is_in("unexpected execution error: RuntimeError", text)
+        check.is_not_in("sk-SECRET-123", text)

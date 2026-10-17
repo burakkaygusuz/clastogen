@@ -33,7 +33,7 @@ def run_trial(item: pytest.Item) -> bool:
     try:
         _reset_function_fixtures(item)
     except Exception as exc:
-        raise TrialError(f"fixture reset failed: {type(exc).__name__}: {exc}") from exc
+        raise TrialError(f"fixture reset failed: {type(exc).__name__}") from exc
     try:
         item.runtest()
     except pytest.xfail.Exception as exc:
@@ -45,5 +45,5 @@ def run_trial(item: pytest.Item) -> bool:
     except pytest.exit.Exception:
         raise
     except Exception as exc:
-        raise TrialError(f"unexpected execution error: {type(exc).__name__}: {exc}") from exc
+        raise TrialError(f"unexpected execution error: {type(exc).__name__}") from exc
     return True
