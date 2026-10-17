@@ -75,7 +75,7 @@ def quadrant(killed: int, runs: int, labels: list[bool | None]) -> str:
     return oracle.quadrant(killed, runs, labels[0])
 
 
-def summarize(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
+def aggregate(labels: dict[str, list[bool | None]]) -> dict[str, Any]:
     runs = [json.loads(p.read_text()) for p in sorted(RESULTS.glob("run_*.json"))]
     verdicts: dict[str, list[str]] = {}
     descriptions: dict[str, str] = {}
@@ -139,7 +139,7 @@ def main() -> None:
     RESULTS.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(WORKERS) as pool:
         list(pool.map(run_once, range(1, REPEATS + 1)))
-    summary = summarize(label_mutants())
+    summary = aggregate(label_mutants())
     document = {"provenance": {**pi_client.provenance(), "repeats": REPEATS}, **summary}
     (RESULTS / "summary.json").write_text(json.dumps(document, indent=2) + "\n")
     (RESULTS / "summary.md").write_text(markdown(document["provenance"], summary))

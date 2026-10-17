@@ -31,7 +31,7 @@ class RecordsPayload(TypedDict):
     """Records of one marked test; execnet serializes only exact builtin types, so statuses travel as plain str."""
 
     baselines: list[dict[str, Any]]
-    results: list[dict[str, Any]]
+    executions: list[dict[str, Any]]
     constraints: list[list[str]]
     oracle: list[dict[str, Any]]
 
@@ -183,7 +183,7 @@ class MutationSummary:
 class ClastogenPluginState:
     """Type-safe state stored in pytest config.stash."""
 
-    results: list[MutantExecution] = field(default_factory=list)
+    executions: list[MutantExecution] = field(default_factory=list)
     baselines: list[BaselineRecord] = field(default_factory=list)
     oracle: list[OracleRecord] = field(default_factory=list)
     summary: MutationSummary | None = None

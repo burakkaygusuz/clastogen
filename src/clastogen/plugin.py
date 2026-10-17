@@ -179,9 +179,9 @@ class _RecordCollector:
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
             self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
-            for r in records["results"]:
+            for r in records["executions"]:
                 fields: dict[str, Any] = {**r, "status": MutantStatus(r["status"])}
-                self._state.results.append(MutantExecution(**fields))
+                self._state.executions.append(MutantExecution(**fields))
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -329,7 +329,7 @@ def _run_mutation(
 ) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
-    Records newly killed mutants in state so later tests skip them; returns (baselines, results, constraints),
+    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints),
     where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
     """
     mutator = PromptMutator(target_symbol=params.target)
@@ -337,10 +337,10 @@ def _run_mutation(
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     mutants = [m for m in mutants if m.id not in state.killed_mutants]
 
-    results = [_execution(item, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
+    executions = [_execution(item, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
     pending = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not pending:
-        return [], results, constraints
+        return [], executions, constraints
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
@@ -348,11 +348,13 @@ def _run_mutation(
         baselines.append(baseline)
         # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
         if baseline.error == _BASELINE_SKIPPED:
-            results += [_execution(item, m, MutantStatus.SKIPPED) for m in pending]
+            executions += [_execution(item, m, MutantStatus.SKIPPED) for m in pending]
         elif baseline.error:
-            results += [_execution(item, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending]
+            executions += [
+                _execution(item, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending
+            ]
         if config is None:
-            return baselines, results, constraints
+            return baselines, executions, constraints
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
@@ -363,8 +365,8 @@ def _run_mutation(
         execution = _evaluate_mutant(item, mutant, sprt)
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
-        results.append(execution)
-    return baselines, results, constraints
+        executions.append(execution)
+    return baselines, executions, constraints
 
 
 def _run_oracle(
@@ -411,14 +413,14 @@ def _run_oracle(
 
 def _to_payload(
     baselines: Sequence[BaselineRecord] = (),
-    results: Sequence[MutantExecution] = (),
+    executions: Sequence[MutantExecution] = (),
     constraints: Sequence[list[str]] = (),
     oracle: Sequence[OracleRecord] = (),
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
         "baselines": [asdict(b) for b in baselines],
-        "results": [{**asdict(r), "status": str(r.status)} for r in results],
+        "executions": [{**asdict(r), "status": str(r.status)} for r in executions],
         "constraints": list(constraints),
         "oracle": [asdict(o) for o in oracle],
     }
@@ -445,8 +447,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         item.user_properties.append((_RECORDS_KEY, _to_payload(oracle=oracle)))
         return res
 
-    baselines, results, constraints = _run_mutation(item, params, prompt_text, state)
-    item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, results, constraints)))
+    baselines, executions, constraints = _run_mutation(item, params, prompt_text, state)
+    item.user_properties.append((_RECORDS_KEY, _to_payload(baselines, executions, constraints)))
     return res
 
 
@@ -472,21 +474,21 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if state is None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
-    state.results.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.results, state.constraints, state.oracle)
+    state.executions.sort(key=lambda r: (r.mutant_id, r.test_id))
+    summary = summarize(state.executions, state.constraints, state.oracle)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)
     if json_path:
-        _write_report(json_path, render_json(summary, state.results, state.baselines))
+        _write_report(json_path, render_json(summary, state.executions, state.baselines))
 
     html_path = session.config.getoption("--clastogen-html", None)
     if html_path:
-        _write_report(html_path, render_html(summary, state.results, state.baselines))
+        _write_report(html_path, render_html(summary, state.executions, state.baselines))
 
     md_path = session.config.getoption("--clastogen-md", None)
     if md_path:
-        _write_report(md_path, render_markdown(summary, state.results, state.baselines))
+        _write_report(md_path, render_markdown(summary, state.executions, state.baselines))
 
     fail_under = session.config.getoption("--clastogen-fail-under", None)
     # Errored mutants drop out of the score, so they fail the run instead of inflating it.
@@ -562,10 +564,10 @@ def _write_summary(
     order = list(STATUS_LABELS)
     show_target = len({r.target for r in summary.results}) > 1
     # A test is named without its file path unless another file has a test with the same name.
-    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.results}
+    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.executions}
     clashes = {n for n, c in Counter(short.values()).items() if c > 1}
     name = {t: t if n in clashes else n for t, n in short.items()}
-    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.results).items()}
+    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.executions).items()}
 
     terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
     for r in sorted(summary.results, key=lambda r: order.index(r.status)):
