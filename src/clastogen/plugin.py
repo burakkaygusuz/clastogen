@@ -1,6 +1,5 @@
 import logging
 import tomllib
-from collections import Counter
 from collections.abc import Generator
 from functools import partial
 from pathlib import Path
@@ -9,29 +8,18 @@ from typing import Any, cast
 import pytest
 
 from clastogen.models import (
-    MIN_BASELINE_RATE,
-    NOISY_BASELINE_RATE,
     BaselineRecord,
     ClastogenParams,
     ClastogenPluginState,
     MutantExecution,
     MutantStatus,
-    MutationSummary,
     OracleRecord,
     RecordsPayload,
 )
 from clastogen.mutation.injection import resolve_target
-from clastogen.reporting.render import STATUS_LABELS, render_html, render_json, render_markdown
-from clastogen.reporting.scoring import (
-    behavior_label,
-    calls_line,
-    coverage_line,
-    exposure_line,
-    operator_line,
-    score_line,
-    summarize,
-    survivor_tests,
-)
+from clastogen.reporting import terminal
+from clastogen.reporting.render import render_html, render_json, render_markdown
+from clastogen.reporting.scoring import below_threshold, summarize
 from clastogen.runner import run_mutation, run_oracle, to_payload
 from clastogen.trial import run_trial
 
@@ -41,7 +29,6 @@ logger = logging.getLogger(__name__)
 STATE_KEY = pytest.StashKey[ClastogenPluginState]()
 _RECORDS_KEY = "clastogen_records"
 SUPPRESSIONS_PATH = Path(".clastogen") / "suppressions.toml"
-_UNTESTED_SHOWN = 10
 
 
 def load_suppressions(root_path: Path) -> set[str]:
@@ -200,13 +187,6 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     return res
 
 
-def _fail_under_failed(summary: MutationSummary, threshold: float) -> bool:
-    """A session without measurable mutants fails any positive threshold."""
-    if summary.score is None:
-        return threshold > 0.0
-    return summary.score < threshold
-
-
 def _write_report(path: str, text: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -242,7 +222,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     # Errored mutants drop out of the score, so they fail the run instead of inflating it.
     mutant_errors = summary.counts[MutantStatus.ERROR]
     errored = mutant_errors > 0
-    fail_under_failed = fail_under is not None and _fail_under_failed(summary, float(fail_under))
+    fail_under_failed = fail_under is not None and below_threshold(summary, float(fail_under))
     if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or errored):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if fail_under_failed and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
@@ -257,129 +237,6 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message
 
 
-_STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
-    MutantStatus.SURVIVED: {"red": True, "bold": True},
-    MutantStatus.INCONCLUSIVE: {"yellow": True},
-    MutantStatus.ERROR: {"purple": True},
-    MutantStatus.KILLED: {"green": True},
-    MutantStatus.SKIPPED: {"light": True},
-    MutantStatus.SUPPRESSED: {"light": True},
-}
-
-
-def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord], verbose: bool) -> None:
-    """Writes one line for all stable baselines (one per test with -v) after the full list of flaky ones."""
-    stable = [b for b in baselines if b.stable]
-    # Errored baselines are reported on their mutants' ERROR and SKIPPED rows.
-    flaky = [b for b in baselines if not b.stable and not b.error]
-    if flaky:
-        title = f"Flaky tests (not mutated: baseline pass rate < {MIN_BASELINE_RATE:.0%})"
-        terminalreporter.write_sep("-", title, yellow=True)
-        for b in flaky:
-            terminalreporter.write_line(
-                f"  {b.test_id}: {b.successes}/{b.runs} baseline runs passed -> {b.target}", yellow=True
-            )
-    else:
-        terminalreporter.write_sep("-")
-    if noisy := [b for b in stable if b.noisy]:
-        terminalreporter.write_line(
-            f"Noisy baselines (pass rate < {NOISY_BASELINE_RATE:.0%}): false KILLs can exceed alpha for "
-            + ", ".join(b.test_id for b in noisy),
-            yellow=True,
-        )
-    if not stable:
-        return
-    if verbose:
-        for b in stable:
-            terminalreporter.write_line(
-                f"Baseline {b.test_id}: {b.successes}/{b.runs} runs passed, p0={b.p0:.3f} -> {b.target}", light=True
-            )
-        return
-    rates = sorted({f"{b.successes}/{b.runs}": b.successes / b.runs for b in stable}.items(), key=lambda kv: kv[1])
-    passed = rates[0][0] if len(rates) == 1 else f"{rates[0][0]}-{rates[-1][0]}"
-    terminalreporter.write_line(
-        f"Baselines: {len(stable)} stable tests, {passed} runs passed (-v shows each test)", light=True
-    )
-
-
-def _write_summary(
-    terminalreporter: pytest.TerminalReporter,
-    state: ClastogenPluginState,
-    summary: MutationSummary,
-    fail_under: float | None,
-) -> None:
-    verbose = terminalreporter.config.get_verbosity() > 0
-    order = list(STATUS_LABELS)
-    show_target = len({r.target for r in summary.results}) > 1
-    # A test is named without its file path unless another file has a test with the same name.
-    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.executions}
-    clashes = {n for n, c in Counter(short.values()).items() if c > 1}
-    name = {t: t if n in clashes else n for t, n in short.items()}
-    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.executions).items()}
-
-    terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
-    for r in sorted(summary.results, key=lambda r: order.index(r.status)):
-        details = [f"[{r.mutant_id}]"]
-        if show_target:
-            details.append(r.target)
-        if r.sample_count is not None:
-            details.append(f"{r.sample_count} runs")
-        if verbose and r.llr is not None:
-            details.append(f"LLR={r.llr:+.2f}")
-        if r.status == MutantStatus.KILLED:
-            details.append(f"by {name[r.test_id]}")
-        if r.status == MutantStatus.SURVIVED:
-            details.append(f"passed in {', '.join(passed_in[r.mutant_id])}")
-        if r.error:
-            details.append(f"[{r.error}]")
-        if label := behavior_label(summary, r.mutant_id):
-            details.append(label)
-        terminalreporter.write_line(f"{STATUS_LABELS[r.status]:<14}  {'  '.join(details)}", **_STATUS_MARKUP[r.status])
-        terminalreporter.write_line(f"    {r.description}", light=True)
-
-    _write_baselines(terminalreporter, state.baselines, verbose)
-
-    survived = summary.counts[MutantStatus.SURVIVED]
-    if survived:
-        terminalreporter.write_line(f"{survived} survived: your tests still pass with these prompt faults.", red=True)
-        terminalreporter.write_line(
-            "    Add an assertion that fails for each one, or suppress its ID in .clastogen/suppressions.toml.",
-            light=True,
-        )
-    inconclusive = summary.counts[MutantStatus.INCONCLUSIVE]
-    if inconclusive:
-        terminalreporter.write_line(
-            f"{inconclusive} inconclusive: no decision after max_steps runs. Increase max_steps or delta.",
-            yellow=True,
-        )
-
-    # Without --clastogen-fail-under, any measured blind spot (score below 100%) shows red and N/A has no colour.
-    if fail_under is None:
-        ok = None if summary.score is None else summary.score == 100.0
-    else:
-        ok = not _fail_under_failed(summary, fail_under)
-    terminalreporter.write_line(score_line(summary), bold=True, green=ok is True, red=ok is False)
-    if calls := calls_line(summary):
-        terminalreporter.write_line(calls, light=True)
-    if line := exposure_line(summary):
-        terminalreporter.write_line(line, bold=True)
-    if line := operator_line(summary):
-        terminalreporter.write_line(line, light=True)
-    if line := coverage_line(summary):
-        terminalreporter.write_line(line, bold=True)
-    if summary.untested:
-        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
-        terminalreporter.write_line(
-            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
-        )
-        for rule in shown:
-            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
-        if len(shown) < len(summary.untested):
-            terminalreporter.write_line(
-                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
-            )
-
-
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatus: int, config: pytest.Config) -> None:
     """Renders the terminal summary from the session-wide MutationSummary computed in sessionfinish."""
     if not config.getoption("--clastogen", False):
@@ -390,22 +247,4 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
     if state is None or summary is None:
         return
 
-    raw_fail_under = config.getoption("--clastogen-fail-under", None)
-    fail_under = None if raw_fail_under is None else float(raw_fail_under)
-    empty = summary.total == 0 and all(b.stable for b in state.baselines)
-    if not empty:
-        _write_summary(terminalreporter, state, summary, fail_under)
-    elif state.marked_tests_count > 0:
-        if state.oracle:
-            hint = " Probes labelled mutants, but no suite test measured them."
-        elif config.getoption("--clastogen-oracle", False):
-            hint = ""
-        else:
-            hint = " Tests with oracle_samples are probes and run only with --clastogen-oracle."
-        terminalreporter.write_line(
-            f"Clastogen: 0 mutants generated across marked tests (check prompt constraints).{hint}"
-        )
-    else:
-        terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
-    if not empty:
-        terminalreporter.write_sep("=", bold=True)
+    terminal.write(terminalreporter, state, summary)

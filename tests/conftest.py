@@ -12,6 +12,7 @@ import clastogen.mutation.structure
 import clastogen.plugin
 import clastogen.reporting.render
 import clastogen.reporting.scoring
+import clastogen.reporting.terminal
 import clastogen.runner
 import clastogen.stats.assertions
 import clastogen.stats.sprt
@@ -25,6 +26,7 @@ for mod in [
     clastogen.models,
     clastogen.reporting.scoring,
     clastogen.reporting.render,
+    clastogen.reporting.terminal,
     clastogen.mutation.structure,
     clastogen.mutation.mutator,
     clastogen.stats.sprt,

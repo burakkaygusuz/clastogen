@@ -185,3 +185,10 @@ def score_line(summary: MutationSummary) -> str:
     if excluded := [f"{n} {s.value.lower()}" for s in unscored if (n := counts[s])]:
         detail += f"; not scored: {', '.join(excluded)}"
     return f"Mutation Score: {score} ({detail})"
+
+
+def below_threshold(summary: MutationSummary, threshold: float) -> bool:
+    """A session without measurable mutants fails any positive threshold."""
+    if summary.score is None:
+        return threshold > 0.0
+    return summary.score < threshold
