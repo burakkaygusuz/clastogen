@@ -18,7 +18,7 @@ Clastogen breaks your system prompt on purpose and checks if your existing pytes
 
 If your tests still pass, you found a blind spot.
 
-**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants. An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
+**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants (measured with clastogen 0.6.0, before later releases). An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
 
 ![Clastogen demo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/demo.gif)
 
@@ -134,7 +134,7 @@ The same results go to `reports/report.html`:
 
 ### Real models
 
-The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
+The [support-desk case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md) tests a 14-rule e-commerce support agent on DeepSeek with a 12-test suite, and checks every verdict against an independent set of behavior probes. The suite scored 27.1% (5 runs, clastogen 0.6.0, dirty working tree). None of the 9 kills was false, 3 survivors were confirmed blind spots (no test for the language, refund-count or discount rules), and 11 survivors were mutants that do not change this model's behavior. 4 mutants were too close to the threshold to call, and 7 mutants (of 3 rules) have no probe.
 
 ---
 

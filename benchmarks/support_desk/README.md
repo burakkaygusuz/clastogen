@@ -28,7 +28,7 @@ in its prompt gives the expected labels and confusion table.
 
 ## Result
 
-Model `openrouter/deepseek/deepseek-v4.1-flash` through pi 1.1.0, clastogen 0.6.0. Full table:
+Model `openrouter/deepseek/deepseek-v4.1-flash` through pi 1.1.0, clastogen 0.6.0 (measured on a dirty working tree, before later releases). Full table:
 [`results/deepseek_deepseek-v4.1-flash/summary.md`](results/deepseek_deepseek-v4.1-flash/summary.md).
 
 - Mutation Score **27.1%** (26.5–29.4 over 5 runs), constraint coverage 30%, about 2,100 calls per run
