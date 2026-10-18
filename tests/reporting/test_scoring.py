@@ -18,6 +18,7 @@ from clastogen.reporting.scoring import (
     operator_line,
     operator_rates,
     score_interval,
+    score_line,
     summarize,
 )
 
@@ -251,3 +252,15 @@ def test_behavior_labels_of_mutants_without_a_result_are_dropped() -> None:
         [_exec("a", MutantStatus.KILLED)], oracle=[OracleRecord("a", "changed"), OracleRecord("gone", "changed")]
     )
     assert summary.behavior == {"a": "changed"}
+
+
+def test_score_line_lists_every_unscored_status() -> None:
+    summary = summarize(
+        [
+            _exec("a", MutantStatus.KILLED),
+            _exec("b", MutantStatus.UNMEASURED),
+            _exec("c", MutantStatus.ERROR),
+        ]
+    )
+
+    assert "; not scored: 1 error, 1 unmeasured)" in score_line(summary)

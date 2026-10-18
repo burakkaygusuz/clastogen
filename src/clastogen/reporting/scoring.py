@@ -194,7 +194,7 @@ def score_line(summary: MutationSummary) -> str:
     counts = summary.counts
     killed = counts[MutantStatus.KILLED]
     detail = f"{killed} of {sum(counts[s] for s in MEASURED)} killed"
-    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.SUPPRESSED)
+    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.UNMEASURED, MutantStatus.SUPPRESSED)
     if excluded := [f"{n} {s.value.lower()}" for s in unscored if (n := counts[s])]:
         detail += f"; not scored: {', '.join(excluded)}"
     line = f"Mutation Score: {score} ({detail})"
