@@ -32,6 +32,20 @@ def _clip(text: str, limit: int) -> str:
     return head.rstrip(" ,.;:") + "…"
 
 
+def _bullet_start(text: str) -> int | None:
+    """Returns where a list marker (-, *, 1. or 1)) ending text starts its line, or None; no regex, so it stays linear."""
+    if text.endswith(("-", "*")):
+        start = len(text) - 1
+    else:
+        digits = text[:-1].rstrip("0123456789")
+        if not text.endswith((".", ")")) or len(digits) == len(text) - 1:
+            return None
+        start = len(digits)
+    # A number ending the previous sentence ("limited to $100.") is not a marker.
+    head = text[:start].rstrip(" \t")
+    return start if not head or head.endswith("\n") else None
+
+
 def _word_table(*pairs: tuple[str, str]) -> tuple[tuple[re.Pattern[str], str], ...]:
     """Compiles (regex fragment, replacement) pairs as case-insensitive whole-word patterns; fragments are not escaped."""
     return tuple((re.compile(rf"\b{word}\b", re.IGNORECASE), new) for word, new in pairs)
@@ -131,8 +145,8 @@ class PromptMutator:
         """Removes rule with its bullet and trailing punctuation; None when the prompt is unchanged."""
         before = prompt[: rule.start]
         trimmed = before.rstrip()  # stripping the whitespace run first keeps the bullet search linear
-        bullet = re.search(r"(?:[-*]|\d+[.)])$", trimmed)
-        head = (trimmed[: bullet.start()] if bullet and trimmed != before else before).rstrip(" \t")
+        bullet = _bullet_start(trimmed)
+        head = (trimmed[:bullet] if bullet is not None and trimmed != before else before).rstrip(" \t")
         after = prompt[rule.end :]
         rest = re.sub(r"^[.?!]?[ \t]*\n?", "", after)
         if not head or head.endswith("\n"):

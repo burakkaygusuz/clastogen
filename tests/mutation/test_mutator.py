@@ -234,3 +234,21 @@ def test_rule_spans_agree_with_the_extracted_rules(prompt: str) -> None:
 
     assert [r.text for r in spans] == mutator.extract_candidate_rules(prompt)
     assert all(prompt[r.start : r.end] == r.text for r in spans)
+
+
+def test_deleting_a_rule_after_a_long_digit_run_is_not_quadratic() -> None:
+    prompt = "9" * 50_000 + "\n12. Never share the code."
+    mutator = PromptMutator()
+    mutant = mutator._delete_mutant(prompt, mutator._rule_spans(prompt)[-1])
+
+    assert mutant is not None
+    assert mutant.mutated_prompt == "9" * 50_000
+
+
+def test_deleting_a_rule_after_a_number_ending_a_sentence_keeps_the_number() -> None:
+    prompt = "Refunds are limited to $100. Never share the code."
+    mutator = PromptMutator()
+    mutant = mutator._delete_mutant(prompt, mutator._rule_spans(prompt)[-1])
+
+    assert mutant is not None
+    assert mutant.mutated_prompt == "Refunds are limited to $100."
