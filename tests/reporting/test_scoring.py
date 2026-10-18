@@ -43,6 +43,7 @@ PRECEDENCE = [
     MutantStatus.INCONCLUSIVE,
     MutantStatus.ERROR,
     MutantStatus.SKIPPED,
+    MutantStatus.UNMEASURED,
     MutantStatus.SUPPRESSED,
 ]
 

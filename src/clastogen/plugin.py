@@ -1,4 +1,5 @@
 import logging
+import os
 import tomllib
 from collections.abc import Generator
 from functools import partial
@@ -15,6 +16,7 @@ from clastogen.models import (
     MutantStatus,
     OracleRecord,
     RecordsPayload,
+    TrialBudget,
 )
 from clastogen.mutation.injection import resolve_target
 from clastogen.reporting import terminal
@@ -75,6 +77,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="With --clastogen, run the probe tests (oracle_samples=N) on every mutant to label which ones change behavior.",
     )
     group.addoption(
+        "--clastogen-max-calls",
+        type=int,
+        metavar="N",
+        help="With --clastogen, run at most N trials per process (xdist: N divided by the workers); mutants left without budget are UNMEASURED.",
+    )
+    group.addoption(
         "--clastogen-fail-under",
         type=float,
         metavar="MIN_SCORE",
@@ -130,7 +138,16 @@ def pytest_configure(config: pytest.Config) -> None:
         "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10, oracle_samples=None): Run Clastogen on target prompt; oracle_samples=N makes the test a behavior probe.",
     )
     suppressed = load_suppressions(config.rootpath) if config.getoption("--clastogen") else set()
-    state = ClastogenPluginState(suppressed_mutants=suppressed)
+    limit = config.getoption("--clastogen-max-calls", None)
+    if limit is not None and limit < 1:
+        raise pytest.UsageError(f"--clastogen-max-calls must be at least 1, got {limit}")
+    # Checked on the controller, which knows the worker count before any worker starts; a worker would get 0 calls.
+    workers = len(config.getoption("tx", ()))
+    if limit is not None and workers > limit:
+        raise pytest.UsageError(f"--clastogen-max-calls {limit} is below the {workers} xdist workers; each needs one")
+    if limit is not None and _is_xdist_worker(config):
+        limit //= int(os.environ["PYTEST_XDIST_WORKER_COUNT"])
+    state = ClastogenPluginState(suppressed_mutants=suppressed, budget=TrialBudget(limit))
     config.stash[STATE_KEY] = state
     if not _is_xdist_worker(config):
         config.pluginmanager.register(_RecordCollector(state), "clastogen-record-collector")
@@ -174,11 +191,13 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
 
     params, prompt_text = _parse_marker(item, marker)
     state = item.config.stash[STATE_KEY]
-    trial = partial(run_trial, item)
+    trial = state.budget.wrap(partial(run_trial, item))
     if (samples := params.oracle_samples) is not None:
         oracle = []
         if item.config.getoption("--clastogen-oracle", False):
-            oracle = run_oracle(item.nodeid, trial, params, samples, prompt_text, state.suppressed_mutants)
+            oracle = run_oracle(
+                item.nodeid, trial, params, samples, prompt_text, state.suppressed_mutants, state.budget
+            )
         item.user_properties.append((_RECORDS_KEY, to_payload(oracle=oracle)))
         return res
 
@@ -240,7 +259,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     mutant_errors = summary.counts[MutantStatus.ERROR]
     errored = mutant_errors > 0
     fail_under_failed = fail_under is not None and below_threshold(summary, float(fail_under))
-    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or errored):
+    # Unmeasured mutants fail the run only when a score threshold was asked for; without one, the budget is the user's choice.
+    unmeasured = summary.counts[MutantStatus.UNMEASURED] if fail_under is not None else 0
+    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or errored or unmeasured):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     if fail_under_failed and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
         # pytest prints shouldfail in red just above its final "N passed" line; keep a reason it already set (-x).
@@ -248,6 +269,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         message = f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
     elif errored and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
         message = f"Clastogen: {mutant_errors} mutant error(s)"
+    elif unmeasured and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
+        message = f"Clastogen: {unmeasured} mutant(s) unmeasured within --clastogen-max-calls"
     else:
         return
     prev = session.shouldfail

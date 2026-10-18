@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, TypedDict, get_args
@@ -24,6 +25,7 @@ class MutantStatus(StrEnum):
     INCONCLUSIVE = "INCONCLUSIVE"
     ERROR = "ERROR"
     SKIPPED = "SKIPPED"
+    UNMEASURED = "UNMEASURED"
     SUPPRESSED = "SUPPRESSED"
 
 
@@ -191,6 +193,28 @@ class TestPlan:
     calls: int
 
 
+class TrialBudget:
+    """Counts the trials one process runs against --clastogen-max-calls; limit None means no cap.
+
+    The original test call is not counted. A unit (the baseline, one mutant or one probe sample set) starts only when
+    its worst case fits in what is left, so the cap is never exceeded.
+    """
+
+    def __init__(self, limit: int | None = None) -> None:
+        self.remaining = limit
+
+    def fits(self, units: int) -> bool:
+        return self.remaining is None or self.remaining >= units
+
+    def wrap(self, trial: Callable[[], bool]) -> Callable[[], bool]:
+        def counted() -> bool:
+            if self.remaining is not None:
+                self.remaining -= 1
+            return trial()
+
+        return counted
+
+
 @dataclass
 class ClastogenPluginState:
     """Type-safe state stored in pytest config.stash."""
@@ -204,6 +228,7 @@ class ClastogenPluginState:
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
     preview: list[TestPlan] = field(default_factory=list)
+    budget: TrialBudget = field(default_factory=TrialBudget)
 
 
 @dataclass(frozen=True)

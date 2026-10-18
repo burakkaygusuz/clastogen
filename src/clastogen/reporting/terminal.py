@@ -33,6 +33,7 @@ _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
     MutantStatus.ERROR: {"purple": True},
     MutantStatus.KILLED: {"green": True},
     MutantStatus.SKIPPED: {"light": True},
+    MutantStatus.UNMEASURED: {"light": True},
     MutantStatus.SUPPRESSED: {"light": True},
 }
 

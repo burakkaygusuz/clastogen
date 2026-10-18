@@ -27,6 +27,7 @@ STATUS_LABELS = {
     MutantStatus.ERROR: "! ERROR",
     MutantStatus.KILLED: "✓ KILLED",
     MutantStatus.SKIPPED: "↷ SKIPPED",
+    MutantStatus.UNMEASURED: "◌ UNMEASURED",
     MutantStatus.SUPPRESSED: "⊘ SUPPRESSED",
 }
 
@@ -36,6 +37,7 @@ _COLORS = {
     MutantStatus.INCONCLUSIVE: "var(--inconclusive)",
     MutantStatus.ERROR: "var(--error)",
     MutantStatus.SKIPPED: "var(--other)",
+    MutantStatus.UNMEASURED: "var(--other)",
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
 

@@ -78,6 +78,7 @@ Other statuses:
 - `INCONCLUSIVE`: The SPRT used all of its runs and did not decide. First, make the assertion more specific. If this is not possible, increase `max_steps` or decrease `delta` on the marker. These changes cause more API calls. Ask the user first.
 - `ERROR`: Read the `error` field. An `ERROR` mutant makes the run fail. One exception stops the test of that mutant. For temporary API errors, set retries in the LLM client.
 - `SKIPPED`: The test called `pytest.skip` during a trial.
+- `UNMEASURED`: `--clastogen-max-calls` had no budget left for this mutant. It is not in the score. Raise the cap, or run the mutant alone, to measure it. It fails the run only with `--clastogen-fail-under`.
 
 ## Untested constraints
 

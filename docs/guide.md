@@ -8,13 +8,15 @@
   - `INCONCLUSIVE`: the SPRT got to `max_steps` before a decision.
   - `ERROR`: the evaluation itself failed. The JSON `error` field gives the cause. One exception in any trial stops the SPRT for that mutant, so configure retries in your LLM client for transient API errors.
   - `SKIPPED`: the test called `pytest.skip` during a trial.
+  - `UNMEASURED`: `--clastogen-max-calls` had no budget left for this mutant. See [Trial budget](#trial-budget).
   - `SUPPRESSED`: you suppressed the mutant. See [Suppress mutants](#suppress-mutants).
-- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `SUPPRESSED`. The score line also shows a Wilson 95% interval; see [Statistics](statistics.md#statistical-caveats).
+- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED`, `UNMEASURED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `UNMEASURED` > `SUPPRESSED`. The score line also shows a Wilson 95% interval; see [Statistics](statistics.md#statistical-caveats).
 - **Errors fail the run:** A mutant with the result `ERROR` is not in the score. Thus any `ERROR` mutant makes the run fail, also without `--clastogen-fail-under`. A baseline error gives `ERROR` to the mutants of its test, and a `pytest.skip` during the baseline gives `SKIPPED`. If a different test kills such a mutant, the result is `KILLED`.
 - **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
 - **Flags:**
-  - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
-  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `mutation_score_ci95`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`, or if any mutant is `UNMEASURED`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
+  - `--clastogen-max-calls N`: runs at most N trials per process, see [Trial budget](#trial-budget).
+  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `mutation_score_ci95`, `total_mutants`, `counts` (all seven statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `UNMEASURED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
   - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text goes to the log. Mutated prompt text still appears in the reports, so review them before you publish them.
   - `--clastogen-oracle`: runs the probe tests on every mutant to label which mutants change behavior. See [Probes](#probes-which-survivors-matter). The JSON then has a `behavior` section.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
@@ -130,6 +132,13 @@ def ask(question: str) -> str:
 ### Parallel runs (pytest-xdist)
 
 You can use `pytest --clastogen -n 4`. Each worker sends its records with the test report. The controller merges the records into one summary. Each process measures its own baselines and keeps its own list of killed mutants. Thus, a worker can run a mutant again after a different worker killed it. The verdicts and the Mutation Score do not change, but the `Calls` line counts these extra runs, so it is higher than in a serial run. Parallel runs do more work in total, but they take less time.
+
+## Trial budget
+
+`--clastogen-max-calls N` caps the trials that a run makes. The original test call is not counted. A unit starts only when its worst case fits in what is left. A baseline unit is the 9 baseline runs plus one mutant's `max_steps` runs, so it starts only when one mutant can still be funded after it. A mutant unit is `max_steps` runs, and a probe unit is `oracle_samples` runs. A unit that does not fit leaves its mutants `UNMEASURED`; a probe that does not fit records nothing for its mutants. `--collect-only` shows the uncapped worst case.
+The budget is shared first-come across all tests in the run: a probe that runs first can spend the whole cap and leave a later mutation test `UNMEASURED`.
+
+With xdist, the cap is split statically: each worker gets `N // workers`, and it must be at least the number of workers. An idle worker's share is unused, so a run with one busy test on two workers can spend at most half of `N`. A per-worker share too small for one unit measures nothing, and the run still exits 0 unless `--clastogen-fail-under` is set.
 
 ## Suppress mutants
 

@@ -18,6 +18,7 @@ from clastogen.models import (
     RecordsPayload,
     SPRTConfig,
     TestPlan,
+    TrialBudget,
 )
 from clastogen.mutation.injection import override_prompt
 from clastogen.mutation.mutator import PromptMutator
@@ -27,6 +28,7 @@ from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_
 logger = logging.getLogger(__name__)
 
 _BASELINE_SKIPPED = "test skipped during baseline"
+_BUDGET_EXHAUSTED = "max-calls budget exhausted"
 
 
 def measure_baseline(
@@ -42,7 +44,7 @@ def measure_baseline(
             error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
-            logger.error("Baseline trial failed for test '%s': %s", test_id, exc)
+            logger.exception("Baseline trial failed for test '%s'", test_id)
             error = str(exc)
             break
 
@@ -119,7 +121,7 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.SKIPPED)
     except TrialError as exc:
-        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
+        logger.exception("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
         return _execution(test_id, mutant, MutantStatus.ERROR, error=str(exc))
 
     status = MutantStatus(res.decision.value)
@@ -181,6 +183,10 @@ def run_mutation(
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
+        # The baseline starts only when at least one mutant can be funded after it.
+        if not state.budget.fits(BASELINE_RUNS - 1 + params.max_steps):
+            unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
+            return [], executions + unmeasured, constraints
         baseline, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
         # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
@@ -199,6 +205,9 @@ def run_mutation(
 
     sprt = SPRT(config)
     for mutant in pending:
+        if not state.budget.fits(params.max_steps):
+            executions.append(_execution(test_id, mutant, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED))
+            continue
         execution = _evaluate_mutant(test_id, trial, mutant, sprt)
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
@@ -213,6 +222,7 @@ def run_oracle(
     samples: int,
     prompt_text: str,
     suppressed: set[str],
+    budget: TrialBudget,
 ) -> list[OracleRecord]:
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
@@ -222,6 +232,10 @@ def run_oracle(
     mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
     mutants = [m for m in mutants if m.id not in suppressed]
     if not mutants:
+        return []
+    # The probe's baseline starts only when at least one mutant can be funded after it.
+    if not budget.fits(2 * samples):
+        logger.warning("Probe '%s' not measured: %s", test_id, _BUDGET_EXHAUSTED)
         return []
     try:
         baseline = [trial() for _ in range(samples)]
@@ -234,6 +248,9 @@ def run_oracle(
 
     records: list[OracleRecord] = []
     for mutant in mutants:
+        if not budget.fits(samples):
+            logger.warning("Probe '%s' not measured on mutant [%s]: %s", test_id, mutant.id, _BUDGET_EXHAUSTED)
+            continue
         try:
             with ExitStack() as stack:
                 _inject(stack, mutant)
