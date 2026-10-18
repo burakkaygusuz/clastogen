@@ -20,7 +20,7 @@ from clastogen.mutation.injection import resolve_target
 from clastogen.reporting import terminal
 from clastogen.reporting.render import render_html, render_json, render_markdown
 from clastogen.reporting.scoring import below_threshold, summarize
-from clastogen.runner import run_mutation, run_oracle, to_payload
+from clastogen.runner import plan_test, run_mutation, run_oracle, to_payload
 from clastogen.trial import run_trial
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,20 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     return res
 
 
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Under --collect-only, plans every marked test so the terminal can preview the run without executing it."""
+    config = session.config
+    if not config.option.collectonly or not config.getoption("--clastogen", False):
+        return
+
+    state = config.stash[STATE_KEY]
+    with_oracle = config.getoption("--clastogen-oracle", False)
+    for item in session.items:
+        if marker := item.get_closest_marker("clastogen"):
+            params, prompt_text = _parse_marker(item, marker)
+            state.preview.append(plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle))
+
+
 def _write_report(path: str, text: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -196,6 +210,9 @@ def _write_report(path: str, text: str) -> None:
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Computes the mutation summary once, then exports JSON/HTML/Markdown and enforces --clastogen-fail-under from it."""
     if not session.config.getoption("--clastogen", False) or _is_xdist_worker(session.config):
+        return
+    # --collect-only ran no mutants, so there is no summary to export or enforce.
+    if session.config.option.collectonly:
         return
 
     state = session.config.stash.get(STATE_KEY, None)
@@ -243,8 +260,12 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
         return
 
     state = config.stash.get(STATE_KEY, None)
-    summary = state.summary if state else None
-    if state is None or summary is None:
+    if state is None:
+        return
+    if config.option.collectonly:
+        terminal.write_preview(terminalreporter, state.preview)
+        return
+    if state.summary is None:
         return
 
-    terminal.write(terminalreporter, state, summary)
+    terminal.write(terminalreporter, state, state.summary)

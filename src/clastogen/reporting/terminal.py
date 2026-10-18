@@ -11,6 +11,7 @@ from clastogen.models import (
     ClastogenPluginState,
     MutantStatus,
     MutationSummary,
+    TestPlan,
 )
 from clastogen.reporting.render import STATUS_LABELS, kill_hint
 from clastogen.reporting.scoring import (
@@ -149,6 +150,24 @@ def _write_summary(
             terminalreporter.write_line(
                 f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
             )
+
+
+def write_preview(terminalreporter: pytest.TerminalReporter, plans: list[TestPlan]) -> None:
+    """Writes what a run would do for the collected marked tests; nothing was executed."""
+    if not plans:
+        terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests collected.")
+        return
+    rules = {(p.target, rule) for p in plans for rule in p.rules}
+    terminalreporter.write_sep("=", "Clastogen Preview (--collect-only: nothing was run)", bold=True)
+    terminalreporter.write_line(
+        f"{len(plans)} marked tests, {len(rules)} rules, {sum(p.mutants for p in plans)} mutant runs "
+        f"({sum(p.suppressed for p in plans)} suppressed)",
+        bold=True,
+    )
+    terminalreporter.write_line(
+        f"At most {sum(p.calls for p in plans)} test calls (worst case: every mutant runs to max_steps)", light=True
+    )
+    terminalreporter.write_sep("=", bold=True)
 
 
 def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary) -> None:

@@ -17,6 +17,7 @@ from clastogen.models import (
     OracleRecord,
     RecordsPayload,
     SPRTConfig,
+    TestPlan,
 )
 from clastogen.mutation.injection import override_prompt
 from clastogen.mutation.mutator import PromptMutator
@@ -133,6 +134,30 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
     fixed = fixed_sample_size(sprt.config)
     return _execution(
         test_id, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed[0] if fixed else None
+    )
+
+
+def plan_test(
+    test_id: str, params: ClastogenParams, prompt_text: str, suppressed: set[str], with_oracle: bool
+) -> TestPlan:
+    """Worst case of a marked test, from the mutants run_mutation or run_oracle would generate, without running them.
+
+    A normal test runs the 9 extra baseline trials only with p0 unset and a mutant to test; each mutant runs at most
+    max_steps trials. A probe runs only with with_oracle, and then samples trials on the original prompt and on each
+    mutant. The original test call is not counted, and a kill by an earlier test can only lower these numbers.
+    """
+    mutator = PromptMutator(target_symbol=params.target)
+    mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
+    suppressed_count = sum(m.id in suppressed for m in mutants)
+    pending = len(mutants) - suppressed_count
+    if params.oracle_samples is not None:
+        if not with_oracle or not pending:
+            return TestPlan(test_id, params.target, (), 0, 0, 0)
+        return TestPlan(test_id, params.target, (), pending, suppressed_count, params.oracle_samples * (1 + pending))
+    rules = tuple(mutator.extract_candidate_rules(prompt_text))
+    baseline_calls = BASELINE_RUNS - 1 if params.p0 is None and pending else 0
+    return TestPlan(
+        test_id, params.target, rules, pending, suppressed_count, baseline_calls + pending * params.max_steps
     )
 
 

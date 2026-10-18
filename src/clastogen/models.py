@@ -179,6 +179,18 @@ class MutationSummary:
         return self.constraints_killed / self.constraints_total * 100.0 if self.constraints_total else None
 
 
+@dataclass(frozen=True)
+class TestPlan:
+    """Worst-case work of one marked test, computed at collection; rules are empty for a probe, which records none."""
+
+    test_id: str
+    target: str
+    rules: tuple[str, ...]
+    mutants: int
+    suppressed: int
+    calls: int
+
+
 @dataclass
 class ClastogenPluginState:
     """Type-safe state stored in pytest config.stash."""
@@ -191,6 +203,7 @@ class ClastogenPluginState:
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
+    preview: list[TestPlan] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

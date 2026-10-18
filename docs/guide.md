@@ -25,7 +25,12 @@
 ```bash
 # Show a log for each step
 pytest --clastogen -s --log-cli-level=INFO
+
+# Preview the rules, mutants and worst-case test calls without running any test
+pytest --clastogen --collect-only
 ```
+
+The preview runs no test and no model call. `At most N test calls` counts the 9 baseline runs (only without `p0`) and up to `max_steps` runs per mutant. A real run uses fewer calls when a mutant is killed early. With `--clastogen-oracle`, each probe adds `oracle_samples * (1 + mutants)` trials; without it, probes add none. The `Calls:` line of the summary counts only the mutant trials, so it excludes the 9 baseline runs of each test and is lower than the real number of trials.
 
 ### Marker options
 
