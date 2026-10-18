@@ -22,13 +22,13 @@ Sleep 5s
 Show
 
 # 1. The eval suite is green.
-Type "uv run pytest -q examples/test_banking_eval.py"
+Type "uv run pytest -q --pyargs clastogen.demo"
 Sleep 500ms
 Enter
 Sleep 3s
 
 # 2. Clastogen finds that the suite misses 2 of 5 prompt faults, and the build fails.
-Type "uv run pytest --clastogen --clastogen-fail-under=80 -q examples/test_banking_eval.py"
+Type "uv run pytest --clastogen --clastogen-fail-under=80 -q --pyargs clastogen.demo"
 Sleep 500ms
 Enter
 Sleep 10s

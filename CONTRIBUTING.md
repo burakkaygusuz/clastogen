@@ -17,6 +17,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 uv run pytest
+uv run pytest --clastogen -n 2 --pyargs clastogen.demo
 uv run pytest --clastogen -n 2 examples/
 ```
 

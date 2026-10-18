@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from clastogen.models import BEHAVIOR_ORDER, Behavior, MutantExecution, MutantStatus, MutationSummary, OracleRecord
+from clastogen.stats.assertions import compute_wilson_interval
 
 _RANK = {status: rank for rank, status in enumerate(MutantStatus)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
@@ -175,16 +176,31 @@ def calls_line(summary: MutationSummary) -> str | None:
     return f"Calls: {summary.calls} (a fixed-N test with the same error rates needs {summary.fixed_calls}: {outcome})"
 
 
+def score_interval(summary: MutationSummary) -> tuple[float, float] | None:
+    """Returns the Wilson 95% interval of the score in percent, or None when no mutant was measured.
+
+    It treats the measured mutants as independent trials, which they are not, and it leaves out the SPRT error rate.
+    """
+    measurable = sum(summary.counts[s] for s in MEASURED)
+    if not measurable:
+        return None
+    low, high = compute_wilson_interval(summary.counts[MutantStatus.KILLED], measurable)
+    return low * 100.0, high * 100.0
+
+
 def score_line(summary: MutationSummary) -> str:
     """Returns the one-line score text shared by the terminal summary and the Markdown report."""
     score = "N/A" if summary.score is None else f"{summary.score:.1f}%"
     counts = summary.counts
     killed = counts[MutantStatus.KILLED]
     detail = f"{killed} of {sum(counts[s] for s in MEASURED)} killed"
-    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.SUPPRESSED)
+    unscored = (MutantStatus.ERROR, MutantStatus.SKIPPED, MutantStatus.UNMEASURED, MutantStatus.SUPPRESSED)
     if excluded := [f"{n} {s.value.lower()}" for s in unscored if (n := counts[s])]:
         detail += f"; not scored: {', '.join(excluded)}"
-    return f"Mutation Score: {score} ({detail})"
+    line = f"Mutation Score: {score} ({detail})"
+    if interval := score_interval(summary):
+        line += f"; Wilson 95% CI {interval[0]:.1f}%-{interval[1]:.1f}%"
+    return line
 
 
 def below_threshold(summary: MutationSummary, threshold: float) -> bool:

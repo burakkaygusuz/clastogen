@@ -16,6 +16,7 @@ import clastogen.reporting.terminal
 import clastogen.runner
 import clastogen.stats.assertions
 import clastogen.stats.sprt
+import clastogen.suppressions
 import clastogen.trial
 
 pytest_plugins = ["pytester"]
@@ -28,6 +29,7 @@ for mod in [
     clastogen.reporting.render,
     clastogen.reporting.terminal,
     clastogen.mutation.structure,
+    clastogen.suppressions,
     clastogen.mutation.mutator,
     clastogen.stats.sprt,
     clastogen.mutation.injection,

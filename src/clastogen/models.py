@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, TypedDict, get_args
@@ -24,6 +25,7 @@ class MutantStatus(StrEnum):
     INCONCLUSIVE = "INCONCLUSIVE"
     ERROR = "ERROR"
     SKIPPED = "SKIPPED"
+    UNMEASURED = "UNMEASURED"
     SUPPRESSED = "SUPPRESSED"
 
 
@@ -43,6 +45,8 @@ MIN_BASELINE_RATE = 0.80
 MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE_RUNS + 2)
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90
+# Trials on an empty prompt after the mutants of a test that killed none: passing all of them means its survivors say nothing.
+CANARY_RUNS = 3
 
 
 def _check_int(name: str, value: object, minimum: int) -> None:
@@ -179,6 +183,40 @@ class MutationSummary:
         return self.constraints_killed / self.constraints_total * 100.0 if self.constraints_total else None
 
 
+@dataclass(frozen=True)
+class RunPlan:
+    """Worst-case work of one marked test, computed at collection; rules are empty for a probe, which records none."""
+
+    test_id: str
+    target: str
+    rules: tuple[str, ...]
+    mutants: int
+    suppressed: int
+    calls: int
+
+
+class TrialBudget:
+    """Counts the trials one process runs against --clastogen-max-calls; limit None means no cap.
+
+    The original test call is not counted. A unit (the baseline, one mutant or one probe sample set) starts only when
+    its worst case fits in what is left, so the cap is never exceeded.
+    """
+
+    def __init__(self, limit: int | None = None) -> None:
+        self.remaining = limit
+
+    def fits(self, units: int) -> bool:
+        return self.remaining is None or self.remaining >= units
+
+    def wrap(self, trial: Callable[[], bool]) -> Callable[[], bool]:
+        def counted() -> bool:
+            if self.remaining is not None:
+                self.remaining -= 1
+            return trial()
+
+        return counted
+
+
 @dataclass
 class ClastogenPluginState:
     """Type-safe state stored in pytest config.stash."""
@@ -191,6 +229,8 @@ class ClastogenPluginState:
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
+    preview: list[RunPlan] = field(default_factory=list)
+    budget: TrialBudget = field(default_factory=TrialBudget)
 
 
 @dataclass(frozen=True)

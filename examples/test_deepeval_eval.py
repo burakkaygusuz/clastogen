@@ -8,7 +8,7 @@ from deepeval import assert_test
 from deepeval.metrics import BaseMetric
 from deepeval.test_case import LLMTestCase
 
-from examples.mock_agent import call_banking_agent
+from clastogen.demo.mock_agent import call_banking_agent
 
 
 class RequiresIdentityCheck(BaseMetric):
@@ -31,7 +31,7 @@ class RequiresIdentityCheck(BaseMetric):
         return "Requires Identity Check"
 
 
-@pytest.mark.clastogen(target="examples.mock_agent:BANKING_SYSTEM_PROMPT")
+@pytest.mark.clastogen(target="clastogen.demo.mock_agent:BANKING_SYSTEM_PROMPT")
 def test_deepeval_identity_check() -> None:
     question = "What is my current balance?"
     case = LLMTestCase(input=question, actual_output=call_banking_agent(question, customer_verified=False))

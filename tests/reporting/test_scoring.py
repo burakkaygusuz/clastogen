@@ -17,6 +17,8 @@ from clastogen.reporting.scoring import (
     exposure_line,
     operator_line,
     operator_rates,
+    score_interval,
+    score_line,
     summarize,
 )
 
@@ -42,6 +44,7 @@ PRECEDENCE = [
     MutantStatus.INCONCLUSIVE,
     MutantStatus.ERROR,
     MutantStatus.SKIPPED,
+    MutantStatus.UNMEASURED,
     MutantStatus.SUPPRESSED,
 ]
 
@@ -81,6 +84,14 @@ def test_score_formula_counts_killed_survived_inconclusive_only() -> None:
 def test_score_is_none_without_measurable_mutants(status: MutantStatus) -> None:
     assert summarize([_exec("a", status)]).score is None
     assert summarize([]).score is None
+
+
+def test_score_interval_is_wilson_over_measurable_mutants() -> None:
+    summary = summarize(
+        [_exec(m, MutantStatus.KILLED) for m in "abc"] + [_exec(m, MutantStatus.SURVIVED) for m in "de"]
+    )
+    assert score_interval(summary) == pytest.approx((23.07, 88.23), abs=0.01)
+    assert score_interval(summarize([_exec("a", MutantStatus.ERROR)])) is None
 
 
 def test_calls_sum_every_execution_not_only_the_merged_one() -> None:
@@ -241,3 +252,15 @@ def test_behavior_labels_of_mutants_without_a_result_are_dropped() -> None:
         [_exec("a", MutantStatus.KILLED)], oracle=[OracleRecord("a", "changed"), OracleRecord("gone", "changed")]
     )
     assert summary.behavior == {"a": "changed"}
+
+
+def test_score_line_lists_every_unscored_status() -> None:
+    summary = summarize(
+        [
+            _exec("a", MutantStatus.KILLED),
+            _exec("b", MutantStatus.UNMEASURED),
+            _exec("c", MutantStatus.ERROR),
+        ]
+    )
+
+    assert "; not scored: 1 error, 1 unmeasured)" in score_line(summary)

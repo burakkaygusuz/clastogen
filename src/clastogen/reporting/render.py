@@ -15,6 +15,7 @@ from clastogen.reporting.scoring import (
     exposure_line,
     operator_line,
     operator_rates,
+    score_interval,
     score_line,
     survivor_tests,
 )
@@ -26,6 +27,7 @@ STATUS_LABELS = {
     MutantStatus.ERROR: "! ERROR",
     MutantStatus.KILLED: "✓ KILLED",
     MutantStatus.SKIPPED: "↷ SKIPPED",
+    MutantStatus.UNMEASURED: "◌ UNMEASURED",
     MutantStatus.SUPPRESSED: "⊘ SUPPRESSED",
 }
 
@@ -35,8 +37,28 @@ _COLORS = {
     MutantStatus.INCONCLUSIVE: "var(--inconclusive)",
     MutantStatus.ERROR: "var(--error)",
     MutantStatus.SKIPPED: "var(--other)",
+    MutantStatus.UNMEASURED: "var(--other)",
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
+
+# The assertion that kills a survivor of each operator. skills/clastogen/SKILL.md documents the same table.
+KILL_HINTS = {
+    "delete_constraint": "The agent obeys the rule for an input that needs the rule.",
+    "invert_negation": "The agent refuses the action or does the action that the rule names.",
+    "weaken_modal": "The agent obeys the rule when the user asks it to break the rule.",
+    "change_threshold": "Use a value between the old limit and the new limit, for example `$250`.",
+    "drop_exception": "Use an input that falls under the exception. Assert that the exception still applies.",
+    "flip_comparator": "Use a value that passes only the original bound.",
+    "scope_swap": "Use an input that needs the rule in every case, not in one case.",
+    "delete_section": "Assert the behavior that the section or the example teaches.",
+    "delete_example": "Assert the behavior that the section or the example teaches.",
+}
+
+
+def kill_hint(r: MutantExecution) -> str | None:
+    """Returns the assertion hint for a survivor, None for every other status."""
+    return KILL_HINTS.get(r.operator_name) if r.status == MutantStatus.SURVIVED else None
+
 
 _CSS = files("clastogen").joinpath("reporting/report.css").read_text(encoding="utf-8")
 
@@ -51,13 +73,15 @@ def _error(error: str | None) -> str:
 
 def _cards(summary: MutationSummary) -> str:
     score = "N/A" if summary.score is None else f"{summary.score:.1f}%"
+    interval = score_interval(summary)
+    ci = "" if interval is None else f'<div class="l">Wilson 95% CI {interval[0]:.1f}%-{interval[1]:.1f}%</div>'
     bar = "".join(
         f'<span style="width:{summary.counts[s] / summary.total * 100:.2f}%;background:{_COLORS[s]}"></span>'
         for s in MutantStatus
         if summary.total and s in MEASURED
     )
     cards = [
-        f'<div class="card score"><div class="l">Mutation score</div><div class="n">{score}</div>'
+        f'<div class="card score"><div class="l">Mutation score</div><div class="n">{score}</div>{ci}'
         f'<div class="bar">{bar}</div></div>',
         f'<div class="card"><div class="l">Mutants</div><div class="n">{summary.total}</div></div>',
     ]
@@ -171,10 +195,14 @@ def _results_table(
         label = behavior_label(summary, mutant_id)
         return f" <em>{escape(label)}</em>" if label else ""
 
+    def _hint(r: MutantExecution) -> str:
+        hint = kill_hint(r)
+        return f"<br><em>Assert: {escape(hint)}</em>" if hint else ""
+
     rows = "".join(
         f"<tr><td>{_badge(r.status.value, _COLORS[r.status])}</td>"
         f"<td>{escape(r.description)}{_error(r.error)}<br><code>{escape(r.mutant_id)} · {escape(r.target)}</code>"
-        f"{_behavior(r.mutant_id)}</td>"
+        f"{_behavior(r.mutant_id)}{_hint(r)}</td>"
         f'<td class="tests">{_test_names(_tests_shown(r, passed_in))}</td>'
         + (
             f'<td class="num">{r.sample_count}</td><td class="num">{r.llr:+.2f}</td></tr>'
@@ -260,6 +288,8 @@ def _markdown_table(summary: MutationSummary, executions: Sequence[MutantExecuti
     for r in _by_status(summary.results):
         tests = ", ".join(t.split("::")[-1] for t in _tests_shown(r, passed_in))
         change = f"{r.description} [{r.error}]" if r.error else r.description
+        if hint := kill_hint(r):
+            change += f" Assert: {hint}"
         if label := behavior_label(summary, r.mutant_id):
             change += f" ({label})"
         rows.append(f"| {STATUS_LABELS[r.status]} | `{r.mutant_id}` | {_code(change)} | {_code(tests)} |")
@@ -293,6 +323,7 @@ def render_json(
     """Renders the structured JSON report; the behavior section is present only when a probe ran."""
     report = {
         "mutation_score": summary.score,
+        "mutation_score_ci95": score_interval(summary),
         "total_mutants": summary.total,
         "counts": {status.value: n for status, n in summary.counts.items()},
         "calls": summary.calls,

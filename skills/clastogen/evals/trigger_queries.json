@@ -1,0 +1,22 @@
+[
+  {"split": "train", "should_trigger": true, "query": "i changed the refund limit in SYSTEM_PROMPT in app/agent.py from $50 to $500 and all my pytest evals still pass. are the evals even checking that rule?"},
+  {"split": "train", "should_trigger": true, "query": "run clastogen on tests/test_support_agent.py and tell me which mutants survived"},
+  {"split": "train", "should_trigger": true, "query": "my mutation score is 60% and the report has 2 SURVIVED mutants for the refund prompt, help me get it to 100"},
+  {"split": "train", "should_trigger": true, "query": "we have a chatbot with a long system prompt and about 30 evals. my manager wants proof the evals would notice if someone deletes a safety rule. can you set that up?"},
+  {"split": "train", "should_trigger": true, "query": "which survivors in clastogen.json are real blind spots and which are harmless? we can afford about 500 api calls"},
+  {"split": "train", "should_trigger": true, "query": "add a clastogen check to our CI so the build fails when the prompt tests are weak (fail under 80)"},
+  {"split": "train", "should_trigger": false, "query": "can you rewrite my system prompt in app/agent.py so it is shorter and clearer? keep all the refund rules"},
+  {"split": "train", "should_trigger": false, "query": "compare gpt-4o and claude on my 40 support tickets and tell me which one follows the refund policy better"},
+  {"split": "train", "should_trigger": false, "query": "set up promptfoo with a yaml config to test my prompt against 20 inputs"},
+  {"split": "train", "should_trigger": false, "query": "my pytest suite for the django app has low coverage, how do i run mutation testing with mutmut on the models module?"},
+  {"split": "train", "should_trigger": false, "query": "write a pytest eval that checks my agent answers in the customer's language"},
+  {"split": "train", "should_trigger": false, "query": "why is my llm-as-judge eval flaky? it passes 7 out of 10 runs"},
+  {"split": "validation", "should_trigger": true, "query": "tests/test_banking.py has 12 evals for BANKING_PROMPT. if somebody weakens a 'must never' rule, would we see a red test?"},
+  {"split": "validation", "should_trigger": true, "query": "clastogen says 3 mutants SURVIVED, one is change_threshold. what assertion do i add?"},
+  {"split": "validation", "should_trigger": true, "query": "pytest --clastogen printed 'Untested constraints' for my agent, what do i do"},
+  {"split": "validation", "should_trigger": true, "query": "try the clastogen demo without an api key, i want to see what a report looks like"},
+  {"split": "validation", "should_trigger": false, "query": "generate 10 adversarial user messages to jailbreak my chatbot's system prompt"},
+  {"split": "validation", "should_trigger": false, "query": "my deepeval metrics fail in CI with a timeout, how do i raise it?"},
+  {"split": "validation", "should_trigger": false, "query": "explain how a sequential probability ratio test works"},
+  {"split": "validation", "should_trigger": false, "query": "refactor this agent class to read the prompt from a yaml file"}
+]

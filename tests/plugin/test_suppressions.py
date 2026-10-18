@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from clastogen.plugin import load_suppressions
+from clastogen.suppressions import load_suppressions
 
 
 def _write_suppressions(root: Path, text: str) -> None:

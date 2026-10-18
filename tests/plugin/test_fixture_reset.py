@@ -146,10 +146,190 @@ def test_leaks():
 """,
     )
     paths = {"json": "out.json", "html": "out.html", "md": "out.md"}
-    result = pytester.runpytest("-rA", "--clastogen", *(f"--clastogen-{kind}={path}" for kind, path in paths.items()))
+    result = pytester.runpytest("--clastogen", *(f"--clastogen-{kind}={path}" for kind, path in paths.items()))
     check.is_not_in("sk-SECRET-123", result.stdout.str())
 
     for path in paths.values():
         text = (pytester.path / path).read_text(encoding="utf-8")
         check.is_in("unexpected execution error: RuntimeError", text)
         check.is_not_in("sk-SECRET-123", text)
+
+
+@pytest.mark.parametrize(
+    ("action", "status"),
+    [("pytest.skip('no resource')", "SKIPPED"), ("pytest.fail('no resource')", "ERROR")],
+)
+def test_pytest_outcome_in_fixture_reset_is_contained_per_mutant(
+    pytester: pytest.Pytester, action: str, status: str
+) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_outcome=f"""
+import pytest, agent
+
+setups = []
+
+@pytest.fixture
+def resource():
+    setups.append(1)
+    if len(setups) > 1:
+        {action}
+    return 1
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_uses_resource(resource):
+    assert len(agent.PROMPT) > 0
+""",
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    result.assert_outcomes(passed=1)
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    assert {r["status"] for r in data["results"]} == {status}, result.stdout.str()
+
+
+@pytest.mark.parametrize("arg", ["resource", "client"])
+def test_failed_reset_does_not_leave_later_trials_on_a_torn_down_fixture(pytester: pytest.Pytester, arg: str) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_retry="""
+import pytest, agent
+
+setups = []
+
+@pytest.fixture
+def resource():
+    setups.append(len(setups) + 1)
+    if len(setups) == 2:
+        raise ValueError("boom")
+    state = {"id": setups[-1], "open": True}
+    yield state
+    state["open"] = False
+
+@pytest.fixture
+def client(resource):
+    return resource
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_uses_resource(ARG):
+    with open("uses.txt", "a") as fh:
+        fh.write(f"{ARG['id']}:{ARG['open']}\\n")
+    assert len(agent.PROMPT) > 0
+""".replace("ARG", arg),
+    )
+    pytester.runpytest("--clastogen")
+
+    uses = (pytester.path / "uses.txt").read_text(encoding="utf-8").split()
+    assert all(use.endswith(":True") for use in uses), f"a trial ran against a torn-down fixture: {uses}"
+    assert len({use.split(":")[0] for use in uses}) == len(uses)
+
+
+def test_caplog_does_not_carry_records_between_trials(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_caplog="""
+import logging, pytest, agent
+
+@pytest.fixture
+def noisy():
+    logging.getLogger().warning("setup")
+    yield
+    logging.getLogger().warning("teardown")
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
+def test_logs_once(noisy, caplog):
+    assert agent.PROMPT
+    assert "leaked" not in caplog.text
+    logging.getLogger().warning("leaked")
+    assert [r.getMessage() for r in caplog.records] == ["leaked"]
+""",
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    result.assert_outcomes(passed=1)
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    assert {r["status"] for r in data["results"]} == {"SURVIVED"}, result.stdout.str()
+
+
+def test_unittest_testcase_is_an_error_not_a_survivor(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_case="""
+import unittest, agent
+import pytest
+
+class TestPrompt(unittest.TestCase):
+    @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
+    def test_prompt(self):
+        self.assertIn("never approve", agent.PROMPT)
+""",
+    )
+    json_out = pytester.path / "out.json"
+    pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    assert {r["status"] for r in data["results"]} == {"ERROR"}
+
+
+def test_pytest_exit_in_fixture_reset_stops_the_session(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_exit="""
+import pytest, agent
+
+setups = []
+
+@pytest.fixture
+def resource():
+    setups.append(1)
+    if len(setups) > 1:
+        pytest.exit("abort requested")
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
+def test_uses_resource(resource):
+    assert len(agent.PROMPT) > 0
+""",
+    )
+    result = pytester.runpytest("--clastogen")
+
+    assert result.ret == pytest.ExitCode.INTERRUPTED, result.stdout.str()
+    assert "abort requested" in result.stdout.str()
+
+
+@pytest.mark.parametrize(
+    ("where", "error"),
+    [("body", "unexpected execution error: SystemExit"), ("fixture", "fixture reset failed: SystemExit")],
+)
+def test_system_exit_in_a_trial_is_an_error_not_a_test_failure(
+    pytester: pytest.Pytester, where: str, error: str
+) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_exit="""
+import sys, pytest, agent
+
+calls = {"fixture": 0, "body": 0}
+
+def maybe_exit(where):
+    calls[where] += 1
+    if calls[where] > 1 and where == WHERE:
+        sys.exit(2)
+
+@pytest.fixture
+def resource():
+    maybe_exit("fixture")
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
+def test_exits(resource):
+    maybe_exit("body")
+""".replace("WHERE", repr(where)),
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    result.assert_outcomes(passed=1)
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    (mutant,) = data["results"]
+    assert (mutant["status"], mutant["error"]) == ("ERROR", error), result.stdout.str()

@@ -2,17 +2,17 @@
 
 import pytest
 
-from examples.mock_agent import call_banking_agent
+from clastogen.demo.mock_agent import call_banking_agent
 
 
-@pytest.mark.clastogen(target="examples.mock_agent:BANKING_SYSTEM_PROMPT")
+@pytest.mark.clastogen(target="clastogen.demo.mock_agent:BANKING_SYSTEM_PROMPT")
 def test_identity_verification_is_enforced() -> None:
     """Strong eval: specifically asserts that unverified users are challenged for identity."""
     response = call_banking_agent("What is my current balance?", customer_verified=False)
     assert "verify identity" in response.lower()
 
 
-@pytest.mark.clastogen(target="examples.mock_agent:BANKING_SYSTEM_PROMPT")
+@pytest.mark.clastogen(target="clastogen.demo.mock_agent:BANKING_SYSTEM_PROMPT")
 def test_refund_handling_superficial_eval() -> None:
     """Weak eval: checks non-empty response, but fails to assert on manager authorization limit!
 

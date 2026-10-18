@@ -1,11 +1,12 @@
 import logging
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
     BASELINE_RUNS,
+    CANARY_RUNS,
     MIN_BASELINE_RATE,
     BaselineRecord,
     Behavior,
@@ -16,7 +17,9 @@ from clastogen.models import (
     MutantStatus,
     OracleRecord,
     RecordsPayload,
+    RunPlan,
     SPRTConfig,
+    TrialBudget,
 )
 from clastogen.mutation.injection import override_prompt
 from clastogen.mutation.mutator import PromptMutator
@@ -26,6 +29,9 @@ from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_
 logger = logging.getLogger(__name__)
 
 _BASELINE_SKIPPED = "test skipped during baseline"
+_BASELINE_UNSTABLE = "baseline: unstable"
+_CANARY_PASSED = "canary: test passes with an empty prompt; read the prompt at call time, or assert on behavior that the prompt causes"
+_BUDGET_EXHAUSTED = "max-calls budget exhausted"
 
 
 def measure_baseline(
@@ -41,7 +47,7 @@ def measure_baseline(
             error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
-            logger.error("Baseline trial failed for test '%s': %s", test_id, exc)
+            logger.exception("Baseline trial failed for test '%s'", test_id)
             error = str(exc)
             break
 
@@ -99,10 +105,10 @@ def _execution(
     )
 
 
-def _inject(stack: ExitStack, mutant: Mutant) -> None:
-    """Patches the mutated prompt in for the life of stack; an injection failure becomes a TrialError."""
+def _inject(stack: ExitStack, target: str, prompt: str) -> None:
+    """Patches the prompt in for the life of stack; an injection failure becomes a TrialError."""
     try:
-        stack.enter_context(override_prompt(mutant.target_symbol, mutant.mutated_prompt))
+        stack.enter_context(override_prompt(target, prompt))
     except Exception as exc:
         raise TrialError(f"prompt injection failed: {type(exc).__name__}") from exc
 
@@ -112,13 +118,13 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
 
     try:
         with ExitStack() as stack:
-            _inject(stack, mutant)
+            _inject(stack, mutant.target_symbol, mutant.mutated_prompt)
             res = sprt.run_evaluator(trial)
     except TrialSkipped:
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.SKIPPED)
     except TrialError as exc:
-        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
+        logger.exception("Mutant [%s] ERROR in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.ERROR, error=str(exc))
 
     status = MutantStatus(res.decision.value)
@@ -134,6 +140,77 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
     return _execution(
         test_id, mutant, status, res.sample_count, res.cumulative_llr, fixed_n=fixed[0] if fixed else None
     )
+
+
+def plan_test(
+    test_id: str, params: ClastogenParams, prompt_text: str, suppressed: set[str], with_oracle: bool
+) -> RunPlan:
+    """Worst case of a marked test, from the mutants run_mutation or run_oracle would generate, without running them.
+
+    A normal test runs the 9 extra baseline trials only with p0 unset, the canary trials and up to max_steps trials per
+    mutant, all only with a mutant to test. A probe runs only with with_oracle, and then samples trials on the original
+    prompt and on each mutant. The original test call is not counted, and a kill by an earlier test can only lower
+    these numbers.
+    """
+    mutator = PromptMutator(target_symbol=params.target)
+    mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
+    suppressed_count = sum(m.id in suppressed for m in mutants)
+    pending = len(mutants) - suppressed_count
+    if params.oracle_samples is not None:
+        if not with_oracle or not pending:
+            return RunPlan(test_id, params.target, (), 0, 0, 0)
+        return RunPlan(test_id, params.target, (), pending, suppressed_count, params.oracle_samples * (1 + pending))
+    rules = tuple(mutator.extract_candidate_rules(prompt_text))
+    calls = _baseline_calls(params) + CANARY_RUNS + pending * params.max_steps if pending else 0
+    return RunPlan(test_id, params.target, rules, pending, suppressed_count, calls)
+
+
+def _baseline_calls(params: ClastogenParams) -> int:
+    return BASELINE_RUNS - 1 if params.p0 is None else 0
+
+
+def _canary_passes(trial: Callable[[], bool], target: str) -> bool:
+    """True when the test passes every run on an empty prompt; a crash or skip there proves nothing and is not a pass."""
+    try:
+        with ExitStack() as stack:
+            _inject(stack, target, "")
+            return all(trial() for _ in range(CANARY_RUNS))
+    except (TrialSkipped, TrialError):
+        return False
+
+
+def _apply_canary(
+    trial: Callable[[], bool], params: ClastogenParams, budget: TrialBudget, evaluated: list[MutantExecution]
+) -> list[MutantExecution]:
+    """Turns the survivors of a test that killed nothing into ERROR when it also passes on an empty prompt.
+
+    A kill already proves the test depends on the prompt, so the canary runs only without one.
+    """
+    unproven = (MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE)
+    if (
+        any(e.status == MutantStatus.KILLED for e in evaluated)
+        or not any(e.status in unproven for e in evaluated)
+        or not budget.fits(CANARY_RUNS)
+        or not _canary_passes(trial, params.target)
+    ):
+        return evaluated
+    return [
+        replace(e, status=MutantStatus.ERROR, error=_CANARY_PASSED, sample_count=None, llr=None, fixed_n=None)
+        if e.status in unproven
+        else e
+        for e in evaluated
+    ]
+
+
+def _baseline_rejected(test_id: str, mutants: Sequence[Mutant], error: str | None) -> list[MutantExecution]:
+    """Records the mutants a broken or flaky baseline left unmeasured, so a kill by another test takes precedence."""
+    if error == _BASELINE_SKIPPED:
+        status, reason = MutantStatus.SKIPPED, None
+    elif error:
+        status, reason = MutantStatus.ERROR, f"baseline: {error}"
+    else:
+        status, reason = MutantStatus.SKIPPED, _BASELINE_UNSTABLE
+    return [_execution(test_id, m, status, error=reason) for m in mutants]
 
 
 def run_mutation(
@@ -154,31 +231,32 @@ def run_mutation(
     if not pending:
         return [], executions, constraints
 
+    # The test starts only when at least one mutant can be funded after it.
+    if not state.budget.fits(_baseline_calls(params) + params.max_steps):
+        unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
+        return [], executions + unmeasured, constraints
+
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
         baseline, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
-        # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
-        if baseline.error == _BASELINE_SKIPPED:
-            executions += [_execution(test_id, m, MutantStatus.SKIPPED) for m in pending]
-        elif baseline.error:
-            executions += [
-                _execution(test_id, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending
-            ]
         if config is None:
-            return baselines, executions, constraints
+            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
         )
-
     sprt = SPRT(config)
+    evaluated: list[MutantExecution] = []
     for mutant in pending:
+        if not state.budget.fits(params.max_steps):
+            evaluated.append(_execution(test_id, mutant, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED))
+            continue
         execution = _evaluate_mutant(test_id, trial, mutant, sprt)
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
-        executions.append(execution)
-    return baselines, executions, constraints
+        evaluated.append(execution)
+    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints
 
 
 def run_oracle(
@@ -188,6 +266,7 @@ def run_oracle(
     samples: int,
     prompt_text: str,
     suppressed: set[str],
+    budget: TrialBudget,
 ) -> list[OracleRecord]:
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
@@ -197,6 +276,9 @@ def run_oracle(
     mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
     mutants = [m for m in mutants if m.id not in suppressed]
     if not mutants:
+        return []
+    if not budget.fits(2 * samples):
+        logger.warning("Probe '%s' not measured: %s", test_id, _BUDGET_EXHAUSTED)
         return []
     try:
         baseline = [trial() for _ in range(samples)]
@@ -209,9 +291,12 @@ def run_oracle(
 
     records: list[OracleRecord] = []
     for mutant in mutants:
+        if not budget.fits(samples):
+            logger.warning("Probe '%s' not measured on mutant [%s]: %s", test_id, mutant.id, _BUDGET_EXHAUSTED)
+            continue
         try:
             with ExitStack() as stack:
-                _inject(stack, mutant)
+                _inject(stack, mutant.target_symbol, mutant.mutated_prompt)
                 candidate = [trial() for _ in range(samples)]
         except (TrialSkipped, TrialError) as exc:
             logger.warning("Probe '%s' not measured on mutant [%s]: %s", test_id, mutant.id, exc)

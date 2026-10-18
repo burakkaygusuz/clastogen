@@ -6,16 +6,19 @@
   - `KILLED`: a test failed with the mutant.
   - `SURVIVED`: the tests continued to pass with the mutant.
   - `INCONCLUSIVE`: the SPRT got to `max_steps` before a decision.
-  - `ERROR`: the evaluation itself failed. The JSON `error` field gives the cause. One exception in any trial stops the SPRT for that mutant, so configure retries in your LLM client for transient API errors.
-  - `SKIPPED`: the test called `pytest.skip` during a trial.
+  - `ERROR`: the evaluation itself failed, or the canary failed (see Canary). The JSON `error` field gives the cause. One exception in any trial stops the SPRT for that mutant, so configure retries in your LLM client for transient API errors.
+  - `SKIPPED`: the test called `pytest.skip` during a trial, or its baseline was flaky (`baseline: unstable`).
+  - `UNMEASURED`: `--clastogen-max-calls` had no budget left for this mutant. See [Trial budget](#trial-budget).
   - `SUPPRESSED`: you suppressed the mutant. See [Suppress mutants](#suppress-mutants).
-- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `SUPPRESSED`.
-- **Errors fail the run:** A mutant with the result `ERROR` is not in the score. Thus any `ERROR` mutant makes the run fail, also without `--clastogen-fail-under`. A baseline error gives `ERROR` to the mutants of its test, and a `pytest.skip` during the baseline gives `SKIPPED`. If a different test kills such a mutant, the result is `KILLED`.
-- **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
+- **Mutation Score** = `KILLED / (KILLED + SURVIVED + INCONCLUSIVE)`. The score does not include `ERROR`, `SKIPPED`, `UNMEASURED` and `SUPPRESSED` mutants. If more than one test examines a mutant, the strongest result is the result for that mutant. The order is `KILLED` > `SURVIVED` > `INCONCLUSIVE` > `ERROR` > `SKIPPED` > `UNMEASURED` > `SUPPRESSED`. The score line also shows a Wilson 95% interval; see [Statistics](statistics.md#statistical-caveats).
+- **Errors fail the run:** A mutant with the result `ERROR` is not in the score. Thus any `ERROR` mutant makes the run fail, also without `--clastogen-fail-under`. A baseline error gives `ERROR` to the mutants of its test, and a failed canary (see below) gives it to the survivors of its test. A `pytest.skip` during the baseline gives `SKIPPED`. If a different test kills such a mutant, the result is `KILLED`.
+- **Baselines:** Before mutation, Clastogen runs each marked test 9 more times without a mutant (10 runs in total). It calculates p0 with the Laplace estimate `(s + 1) / (n + 2)`. If the raw pass rate of a test is less than 80%, the test is flaky and Clastogen does not mutate it, and its mutants are `SKIPPED` with the reason `baseline: unstable`. The terminal summary shows the pass counts on one "Baselines" line. Use `-v` to show p0 for each test.
+- **Canary:** After the mutants, when the test killed none of them and left some `SURVIVED` or `INCONCLUSIVE`, Clastogen runs the test 3 times with the target prompt replaced by an empty string. A test that passes all 3 times does not depend on the prompt at call time (for example, it uses a copy made at import), or the model satisfies it with its default behavior, so its survivors say nothing. They become `ERROR` with the reason `canary: test passes with an empty prompt; read the prompt at call time, or assert on behavior that the prompt causes`. `ERROR` is a deliberate choice: it fails the run, so a weak test cannot look like a pass. A kill of the same mutant by another test still takes precedence. A test that killed a mutant is not checked: the kill proves that it depends on the prompt. A crash or skip on the empty prompt is neutral: it is not a pass, and it gives no warning. The canary trials are not in the score and not in the `Calls:` line.
 - **Flags:**
-  - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
-  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `total_mutants`, `counts` (all six statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
-  - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text goes to the log. Mutated prompt text still appears in the reports, so review them before you publish them.
+  - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`, or if any mutant is `UNMEASURED`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
+  - `--clastogen-max-calls N`: runs at most N trials per process, see [Trial budget](#trial-budget).
+  - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `mutation_score_ci95`, `total_mutants`, `counts` (all seven statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `UNMEASURED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
+  - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text and traceback go to the log, which `-rA` or `-rP` prints. Mutated prompt text still appears in the reports, so review them before you publish them.
   - `--clastogen-oracle`: runs the probe tests on every mutant to label which mutants change behavior. See [Probes](#probes-which-survivors-matter). The JSON then has a `behavior` section.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
   - `--clastogen-md PATH`: writes a short Markdown summary: the score and one table of mutants. Use it for GitHub job summaries and pull request comments. See [CI](../README.md#ci).
@@ -25,7 +28,12 @@
 ```bash
 # Show a log for each step
 pytest --clastogen -s --log-cli-level=INFO
+
+# Preview the rules, mutants and worst-case test calls without running any test
+pytest --clastogen --collect-only
 ```
+
+The preview runs no test and no model call. `At most N test calls` counts the 3 canary runs (they run only when nothing is killed), the 9 baseline runs (only without `p0`) and up to `max_steps` runs per mutant. A real run uses fewer calls when a mutant is killed early. With `--clastogen-oracle`, each probe adds `oracle_samples * (1 + mutants)` trials; without it, probes add none. The `Calls:` line of the summary counts only the mutant trials, so it excludes the 9 baseline runs and the 3 canary runs of each test and is lower than the real number of trials.
 
 ### Marker options
 
@@ -92,9 +100,9 @@ A mutant that no probe measured is `unlabelled`. A `suspected` mutant is in none
 
 For each mutant, Clastogen replaces the module attribute (or class attribute) with the mutant. After all trials of that mutant, it puts back the original value. It also replaces module-level aliases that have the same name and refer to the same string object. An example is `from my_app.agent import SYSTEM_PROMPT` at the top of a different module.
 
-Thus, your code must read the prompt when it calls the model. Clastogen does not change copies that your code made before the trial, such as a default argument (`def ask(msg, system=SYSTEM_PROMPT)`), a closure or a list that holds the string. Mutants of these copies always show `SURVIVED`.
+Thus, your code must read the prompt when it calls the model. Clastogen does not change copies that your code made before the trial, such as a default argument (`def ask(msg, system=SYSTEM_PROMPT)`), a closure or a list that holds the string. Mutants of these copies show `SURVIVED`; when the test killed no mutant, they show `ERROR` (see Canary).
 
-For each trial, Clastogen removes and builds again the function-scoped fixtures. Thus, a fixture such as `bot = {"system": agent.PROMPT}` gets the mutant. Clastogen builds module-scoped and session-scoped fixtures only one time, so they keep the original prompt. Values that your code captures at import time also keep the original prompt. Mutants of these values also show `SURVIVED`.
+For each trial, Clastogen removes and builds again the function-scoped fixtures. Thus, a fixture such as `bot = {"system": agent.PROMPT}` gets the mutant. Clastogen builds module-scoped and session-scoped fixtures only one time, so they keep the original prompt. Values that your code captures at import time also keep the original prompt. Mutants of these values also show `SURVIVED`; when the test killed no mutant, they show `ERROR` (see Canary).
 
 All trials run in the call phase of the original test. Hooks of other plugins apply one time to the test and all its trials. For example, a `pytest-timeout` limit applies to the total time of the test and its trials.
 
@@ -126,15 +134,22 @@ def ask(question: str) -> str:
 
 You can use `pytest --clastogen -n 4`. Each worker sends its records with the test report. The controller merges the records into one summary. Each process measures its own baselines and keeps its own list of killed mutants. Thus, a worker can run a mutant again after a different worker killed it. The verdicts and the Mutation Score do not change, but the `Calls` line counts these extra runs, so it is higher than in a serial run. Parallel runs do more work in total, but they take less time.
 
+## Trial budget
+
+`--clastogen-max-calls N` caps the trials that a run makes. The original test call is not counted. A unit starts only when its worst case fits in what is left. The setup unit is the 9 baseline runs (only without `p0`) and one mutant's `max_steps` runs, so a test starts only when one mutant can still be funded after the baseline. A mutant unit is `max_steps` runs, the canary unit is 3 runs and is skipped when it does not fit, and a probe unit is `oracle_samples` runs. A unit that does not fit leaves its mutants `UNMEASURED`; a probe that does not fit records nothing for its mutants. `--collect-only` shows the uncapped worst case.
+The budget is shared first-come across all tests in the run: a probe that runs first can spend the whole cap and leave a later mutation test `UNMEASURED`.
+
+With xdist, the cap is split statically: each worker gets `N // workers`, and it must be at least the number of workers. An idle worker's share is unused, so a run with one busy test on two workers can spend at most half of `N`. A per-worker share too small for one unit measures nothing, and the run still exits 0 unless `--clastogen-fail-under` is set.
+
 ## Suppress mutants
 
-Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `7d1281020f96`, the inverted refund rule in the [Demo](../README.md#demo).
+Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `87e1366fa8ae`, the inverted refund rule in the [Demo](../README.md#demo).
 
 Put the IDs in `.clastogen/suppressions.toml` in your pytest `rootdir`. Each entry must have a `reason`:
 
 ```toml
 [[suppressions]]
-mutant_id = "7d1281020f96"
+mutant_id = "87e1366fa8ae"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 
@@ -163,3 +178,4 @@ An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mu
 3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.
 4. **Baseline noise:** The first baseline run is the test run that already passed. Also, p0 is a point estimate. Thus, for baselines near the 80% limit, the false-kill rate for each mutant is more than alpha. These are the rates for an unchanged mutant (`delta=0.30`, `max_steps=20`, accepted baselines only): a true baseline of 0.90 gives 2.2%, 0.85 gives 5.0%, 0.80 gives 8.6% and 0.75 gives 13.2%. A higher limit does not fix this problem. With a 90% limit, 0.85 still gives 7.0%. The terminal, Markdown and HTML reports flag every test with a raw baseline rate below 90% as a noisy baseline, and the JSON `baselines` have a `noisy` field. Make the test more stable, or set p0 explicitly.
 5. **Differential execution:** After a test kills a mutant, other tests do not run that mutant again. But Clastogen does not make a static dependency graph before execution.
+6. **Test types:** Only plain pytest test functions are supported; a `unittest.TestCase` test gets `ERROR`. Soft-assert plugins such as pytest-check record failures instead of raising, so every trial passes and the mutants are reported `SURVIVED`, and a check that fails during a trial is charged to the real test, so a passing test can be reported `FAILED`. Do not mark such tests.
