@@ -73,11 +73,8 @@ def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[
     )
 
 
-def _write_summary(
-    terminalreporter: pytest.TerminalReporter,
-    state: ClastogenPluginState,
-    summary: MutationSummary,
-    fail_under: float | None,
+def _write_mutants(
+    terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary
 ) -> None:
     verbose = terminalreporter.config.get_verbosity() > 0
     order = list(STATUS_LABELS)
@@ -88,7 +85,6 @@ def _write_summary(
     name = {t: t if n in clashes else n for t, n in short.items()}
     passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.executions).items()}
 
-    terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
     for r in sorted(summary.results, key=lambda r: order.index(r.status)):
         details = [f"[{r.mutant_id}]"]
         if show_target:
@@ -110,6 +106,30 @@ def _write_summary(
         if hint := kill_hint(r):
             terminalreporter.write_line(f"    Assert: {hint}", light=True)
 
+
+def _write_untested(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, verbose: bool) -> None:
+    if summary.untested:
+        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
+        terminalreporter.write_line(
+            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
+        )
+        for rule in shown:
+            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
+        if len(shown) < len(summary.untested):
+            terminalreporter.write_line(
+                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
+            )
+
+
+def _write_summary(
+    terminalreporter: pytest.TerminalReporter,
+    state: ClastogenPluginState,
+    summary: MutationSummary,
+    fail_under: float | None,
+) -> None:
+    verbose = terminalreporter.config.get_verbosity() > 0
+    terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
+    _write_mutants(terminalreporter, state, summary)
     _write_baselines(terminalreporter, state.baselines, verbose)
 
     survived = summary.counts[MutantStatus.SURVIVED]
@@ -140,17 +160,7 @@ def _write_summary(
         terminalreporter.write_line(line, light=True)
     if line := coverage_line(summary):
         terminalreporter.write_line(line, bold=True)
-    if summary.untested:
-        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
-        terminalreporter.write_line(
-            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
-        )
-        for rule in shown:
-            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
-        if len(shown) < len(summary.untested):
-            terminalreporter.write_line(
-                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
-            )
+    _write_untested(terminalreporter, summary, verbose)
 
 
 def write_preview(terminalreporter: pytest.TerminalReporter, plans: list[RunPlan]) -> None:
