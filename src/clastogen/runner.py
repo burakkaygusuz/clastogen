@@ -28,6 +28,7 @@ from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_
 logger = logging.getLogger(__name__)
 
 _BASELINE_SKIPPED = "test skipped during baseline"
+_BASELINE_UNSTABLE = "baseline: unstable"
 _BUDGET_EXHAUSTED = "max-calls budget exhausted"
 
 
@@ -163,6 +164,17 @@ def plan_test(
     )
 
 
+def _baseline_rejected(test_id: str, mutants: Sequence[Mutant], error: str | None) -> list[MutantExecution]:
+    """Records the mutants a broken or flaky baseline left unmeasured, so a kill by another test takes precedence."""
+    if error == _BASELINE_SKIPPED:
+        status, reason = MutantStatus.SKIPPED, None
+    elif error:
+        status, reason = MutantStatus.ERROR, f"baseline: {error}"
+    else:
+        status, reason = MutantStatus.SKIPPED, _BASELINE_UNSTABLE
+    return [_execution(test_id, m, status, error=reason) for m in mutants]
+
+
 def run_mutation(
     test_id: str, trial: Callable[[], bool], params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
 ) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
@@ -189,15 +201,8 @@ def run_mutation(
             return [], executions + unmeasured, constraints
         baseline, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
-        # A broken baseline leaves its mutants unmeasured; recording them lets a kill by another test take precedence.
-        if baseline.error == _BASELINE_SKIPPED:
-            executions += [_execution(test_id, m, MutantStatus.SKIPPED) for m in pending]
-        elif baseline.error:
-            executions += [
-                _execution(test_id, m, MutantStatus.ERROR, error=f"baseline: {baseline.error}") for m in pending
-            ]
         if config is None:
-            return baselines, executions, constraints
+            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps

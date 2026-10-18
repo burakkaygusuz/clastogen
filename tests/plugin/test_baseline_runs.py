@@ -77,6 +77,18 @@ def test_broken_baseline_is_rejected_with_reason(
         assert mutant_error in result.stdout.str()
 
 
+def test_flaky_baseline_records_its_mutants_as_skipped(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_breaks=_BREAKS_ON_RERUN.format(action="assert False"))
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    (mutant,) = data["results"]
+    assert (mutant["status"], mutant["error"]) == ("SKIPPED", "baseline: unstable")
+    assert "Flaky tests" in result.stdout.str()
+
+
 @pytest.mark.parametrize("files", [("test_a.py", "test_b.py"), ("test_b.py", "test_a.py")])
 def test_baseline_error_outcome_does_not_depend_on_test_order(
     pytester: pytest.Pytester, files: tuple[str, ...]
