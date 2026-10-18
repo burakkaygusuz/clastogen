@@ -15,6 +15,7 @@ from clastogen.reporting.scoring import (
     exposure_line,
     operator_line,
     operator_rates,
+    score_interval,
     score_line,
     survivor_tests,
 )
@@ -51,13 +52,15 @@ def _error(error: str | None) -> str:
 
 def _cards(summary: MutationSummary) -> str:
     score = "N/A" if summary.score is None else f"{summary.score:.1f}%"
+    interval = score_interval(summary)
+    ci = "" if interval is None else f'<div class="l">Wilson 95% CI {interval[0]:.1f}%-{interval[1]:.1f}%</div>'
     bar = "".join(
         f'<span style="width:{summary.counts[s] / summary.total * 100:.2f}%;background:{_COLORS[s]}"></span>'
         for s in MutantStatus
         if summary.total and s in MEASURED
     )
     cards = [
-        f'<div class="card score"><div class="l">Mutation score</div><div class="n">{score}</div>'
+        f'<div class="card score"><div class="l">Mutation score</div><div class="n">{score}</div>{ci}'
         f'<div class="bar">{bar}</div></div>',
         f'<div class="card"><div class="l">Mutants</div><div class="n">{summary.total}</div></div>',
     ]
@@ -293,6 +296,7 @@ def render_json(
     """Renders the structured JSON report; the behavior section is present only when a probe ran."""
     report = {
         "mutation_score": summary.score,
+        "mutation_score_ci95": score_interval(summary),
         "total_mutants": summary.total,
         "counts": {status.value: n for status, n in summary.counts.items()},
         "calls": summary.calls,

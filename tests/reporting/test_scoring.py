@@ -17,6 +17,7 @@ from clastogen.reporting.scoring import (
     exposure_line,
     operator_line,
     operator_rates,
+    score_interval,
     summarize,
 )
 
@@ -81,6 +82,14 @@ def test_score_formula_counts_killed_survived_inconclusive_only() -> None:
 def test_score_is_none_without_measurable_mutants(status: MutantStatus) -> None:
     assert summarize([_exec("a", status)]).score is None
     assert summarize([]).score is None
+
+
+def test_score_interval_is_wilson_over_measurable_mutants() -> None:
+    summary = summarize(
+        [_exec(m, MutantStatus.KILLED) for m in "abc"] + [_exec(m, MutantStatus.SURVIVED) for m in "de"]
+    )
+    assert score_interval(summary) == pytest.approx((23.07, 88.23), abs=0.01)
+    assert score_interval(summarize([_exec("a", MutantStatus.ERROR)])) is None
 
 
 def test_calls_sum_every_execution_not_only_the_merged_one() -> None:

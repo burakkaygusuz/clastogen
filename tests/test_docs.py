@@ -44,6 +44,10 @@ def test_demo_reports_documented_score(tmp_path: Path, subprocess_env: None) -> 
     check.equal(data["counts"]["KILLED"], 3)
     check.equal(data["counts"]["SURVIVED"], 2)
     check.almost_equal(data["mutation_score"], 60.0)
+    low, high = data["mutation_score_ci95"]
+    check.almost_equal(low, 23.07, abs=0.01)
+    check.almost_equal(high, 88.23, abs=0.01)
+    check.is_in("Wilson 95% CI 23.1%-88.2%", proc.stdout)
 
     by_id = {r["mutant_id"]: r for r in data["results"]}
     inverted_identity = next(r for r in by_id.values() if "NEVER verify customer identity" in r["description"])

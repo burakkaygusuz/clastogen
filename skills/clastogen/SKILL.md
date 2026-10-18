@@ -147,7 +147,7 @@ Use the Clastogen demo to check the setup without an API key. The demo is in the
 pytest --clastogen examples/test_banking_eval.py
 ```
 
-The result must be `Mutation Score: 60.0% (3 of 5 killed)`.
+The result must be `Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%`.
 
 ## CI
 

@@ -120,7 +120,7 @@ The terminal output:
     Weakened constraint: 'You must always verify customer identity…' -> 'You must USUALLY verify customer identity…'
 --------------------------------------------------------------------------------
 2 survived: your tests still pass with these prompt faults.
-Mutation Score: 60.0% (3 of 5 killed)
+Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%
 Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
 By operator: change_threshold 0/1 (0%), delete_constraint 1/1 (100%), invert_negation 1/2 (50%), weaken_modal 1/1 (100%)
 Constraint Coverage: 1 of 2 constraints killed (50.0%); 1 survived or inconclusive, 0 untested

@@ -122,6 +122,7 @@ The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scena
 - **Selection by the 80% rule:** The plugin accepts a low-rate baseline only after a lucky streak, so the estimated $p_0$ is too high. The false-kill rate for an unchanged mutant is then 18.93% at a true rate of 0.70 and 8.92% at 0.80. Both rates are above the nominal 5%. A fixed-N test at the estimated $p_0$ has the same problem (Scenario 3b).
 - **Power at a drop of exactly $\delta$:** For baselines of 0.90 or more, the SPRT kills only 64–66% of these mutants, not the nominal 90%. Larger drops are killed reliably.
 - **Many mutants:** Each unchanged mutant can give a false kill. The expected number of false kills is approximately $m \cdot \alpha$ for $m$ mutants. Mutants of one test share the same baseline $p_0$, so their verdicts are correlated. In the simulation, the worst case is a true rate of 0.70: at least 1 false kill among 20 unchanged mutants has a probability of 89.1%. Independent mutants would give 98.5%.
+- **Mutation score interval:** The Wilson 95% interval of the Mutation Score (terminal, reports and `mutation_score_ci95`) treats the measured mutants as independent trials, which they are not (see Many mutants). The SPRT error rates are not in it.
 
 > **Indifference zone:** Sometimes the mutant pass rate is near $(p_0 + p_1) / 2$. In this zone, a sequential test cannot make a decision with a finite number of samples. Clastogen stops at $N_{\max}$ and shows the result as `INCONCLUSIVE`. It does not guess.
 
