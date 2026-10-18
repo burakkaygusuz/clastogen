@@ -19,7 +19,6 @@ def test_strong():
     assert "never approve refunds over $50." in agent.PROMPT
     assert "always verify identity" in agent.PROMPT
 
-# A probe with oracle_samples runs only with --clastogen-oracle; the default run skips it.
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, oracle_samples=5)
 def test_probe():
     _log()
@@ -41,8 +40,6 @@ def test_collect_only_previews_worst_case_calls_without_running_anything(
     assert result.ret == 0
     assert not (pytester.path / "calls.log").exists()
     assert not json_out.exists()
-    # The suite test is planned with 9 baseline trials and 2 mutants at 20 steps each: 9 + 2 * 20 = 49.
-    # The probe adds 5 * (1 + 2) = 15 trials and 2 mutant runs, but only with --clastogen-oracle.
     assert f"2 marked tests, 2 rules, {mutant_runs} mutant runs (0 suppressed)" in stdout
     assert f"At most {calls} test calls" in stdout
 

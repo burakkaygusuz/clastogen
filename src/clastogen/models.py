@@ -182,7 +182,7 @@ class MutationSummary:
 
 
 @dataclass(frozen=True)
-class TestPlan:
+class RunPlan:
     """Worst-case work of one marked test, computed at collection; rules are empty for a probe, which records none."""
 
     test_id: str
@@ -227,7 +227,7 @@ class ClastogenPluginState:
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
-    preview: list[TestPlan] = field(default_factory=list)
+    preview: list[RunPlan] = field(default_factory=list)
     budget: TrialBudget = field(default_factory=TrialBudget)
 
 

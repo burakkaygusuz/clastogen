@@ -16,8 +16,8 @@ from clastogen.models import (
     MutantStatus,
     OracleRecord,
     RecordsPayload,
+    RunPlan,
     SPRTConfig,
-    TestPlan,
     TrialBudget,
 )
 from clastogen.mutation.injection import override_prompt
@@ -44,7 +44,7 @@ def measure_baseline(
             error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
-            logger.exception("Baseline trial failed for test '%s'", test_id)
+            logger.error("Baseline trial failed for test '%s': %s", test_id, exc)
             error = str(exc)
             break
 
@@ -121,7 +121,7 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.SKIPPED)
     except TrialError as exc:
-        logger.exception("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
+        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
         return _execution(test_id, mutant, MutantStatus.ERROR, error=str(exc))
 
     status = MutantStatus(res.decision.value)
@@ -141,7 +141,7 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
 
 def plan_test(
     test_id: str, params: ClastogenParams, prompt_text: str, suppressed: set[str], with_oracle: bool
-) -> TestPlan:
+) -> RunPlan:
     """Worst case of a marked test, from the mutants run_mutation or run_oracle would generate, without running them.
 
     A normal test runs the 9 extra baseline trials only with p0 unset and a mutant to test; each mutant runs at most
@@ -154,11 +154,11 @@ def plan_test(
     pending = len(mutants) - suppressed_count
     if params.oracle_samples is not None:
         if not with_oracle or not pending:
-            return TestPlan(test_id, params.target, (), 0, 0, 0)
-        return TestPlan(test_id, params.target, (), pending, suppressed_count, params.oracle_samples * (1 + pending))
+            return RunPlan(test_id, params.target, (), 0, 0, 0)
+        return RunPlan(test_id, params.target, (), pending, suppressed_count, params.oracle_samples * (1 + pending))
     rules = tuple(mutator.extract_candidate_rules(prompt_text))
     baseline_calls = BASELINE_RUNS - 1 if params.p0 is None and pending else 0
-    return TestPlan(
+    return RunPlan(
         test_id, params.target, rules, pending, suppressed_count, baseline_calls + pending * params.max_steps
     )
 
@@ -233,7 +233,6 @@ def run_oracle(
     mutants = [m for m in mutants if m.id not in suppressed]
     if not mutants:
         return []
-    # The probe's baseline starts only when at least one mutant can be funded after it.
     if not budget.fits(2 * samples):
         logger.warning("Probe '%s' not measured: %s", test_id, _BUDGET_EXHAUSTED)
         return []

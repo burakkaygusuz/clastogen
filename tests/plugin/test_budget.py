@@ -26,8 +26,6 @@ def _trials(pytester: pytest.Pytester) -> int:
 
 @pytest.mark.parametrize(
     ("cap", "trials", "killed", "unmeasured", "score"),
-    # Baseline 9 + 2 per killed mutant; a mutant starts only when its 5 steps fit in what is left, and the baseline
-    # starts only when 9 + 5 fits, so 12 runs nothing.
     [(5, 0, 0, 2, None), (12, 0, 0, 2, None), (14, 11, 1, 1, 100.0), (30, 13, 2, 0, 100.0)],
 )
 def test_serial_run_never_exceeds_the_cap(
@@ -41,7 +39,6 @@ def test_serial_run_never_exceeds_the_cap(
     assert _trials(pytester) == trials <= cap
     assert data["counts"]["KILLED"] == killed
     assert data["counts"]["UNMEASURED"] == unmeasured
-    # The denominator counts only measured mutants: one killed of one measured is 100%, not 1 of 2.
     assert data["mutation_score"] == score
 
 
@@ -59,7 +56,6 @@ def test_probe():
 
 @pytest.mark.parametrize(
     ("cap", "trials", "labelled"),
-    # The probe's 5 baseline samples need 5 more for one mutant: below 10 nothing starts, at 10 one mutant is labelled.
     [(5, 0, False), (9, 0, False), (10, 10, True), (30, 15, True)],
 )
 def test_probe_needs_its_baseline_and_one_mutant_in_budget(

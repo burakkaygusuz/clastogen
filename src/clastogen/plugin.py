@@ -138,7 +138,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10, oracle_samples=None): Run Clastogen on target prompt; oracle_samples=N makes the test a behavior probe.",
     )
     suppressed = load_suppressions(config.rootpath) if config.getoption("--clastogen") else set()
-    limit = config.getoption("--clastogen-max-calls", None)
+    limit: int | None = config.getoption("--clastogen-max-calls", None)
     if limit is not None and limit < 1:
         raise pytest.UsageError(f"--clastogen-max-calls must be at least 1, got {limit}")
     # Checked on the controller, which knows the worker count before any worker starts; a worker would get 0 calls.
@@ -230,7 +230,6 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Computes the mutation summary once, then exports JSON/HTML/Markdown and enforces --clastogen-fail-under from it."""
     if not session.config.getoption("--clastogen", False) or _is_xdist_worker(session.config):
         return
-    # --collect-only ran no mutants, so there is no summary to export or enforce.
     if session.config.option.collectonly:
         return
 
