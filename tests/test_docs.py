@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
+import pytest
 from pytest_check import check
 
 from clastogen.mutation.mutator import PromptMutator
@@ -49,27 +48,18 @@ def test_kill_hints_match_skill_table() -> None:
     assert documented == KILL_HINTS
 
 
-def test_demo_reports_documented_score(tmp_path: Path, subprocess_env: None) -> None:
+def test_demo_reports_documented_score(tmp_path: Path, pytester: pytest.Pytester) -> None:
     json_out = tmp_path / "demo.json"
     md_out = tmp_path / "demo.md"
-    proc = subprocess.run(  # noqa: S603
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "--clastogen",
-            f"--clastogen-json={json_out}",
-            f"--clastogen-md={md_out}",
-            "examples/test_banking_eval.py",
-        ],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=False,
+    result = pytester.runpytest(
+        "--pyargs",
+        "clastogen.demo",
+        "--clastogen",
+        f"--clastogen-json={json_out}",
+        f"--clastogen-md={md_out}",
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    out = result.stdout.str()
+    assert result.ret == 0, out
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
     check.equal(data["counts"]["KILLED"], 3)
@@ -78,11 +68,11 @@ def test_demo_reports_documented_score(tmp_path: Path, subprocess_env: None) -> 
     low, high = data["mutation_score_ci95"]
     check.almost_equal(low, 23.07, abs=0.01)
     check.almost_equal(high, 88.23, abs=0.01)
-    check.is_in("Wilson 95% CI 23.1%-88.2%", proc.stdout)
+    check.is_in("Wilson 95% CI 23.1%-88.2%", out)
     # Only the two survivors get a hint, in the terminal and in the Markdown report.
     hint = "Assert: Use a value between the old limit and the new limit"
-    check.equal(proc.stdout.count("Assert:"), 2)
-    check.is_in(hint, proc.stdout)
+    check.equal(out.count("Assert:"), 2)
+    check.is_in(hint, out)
     md = md_out.read_text(encoding="utf-8")
     check.equal(md.count(hint), 1)
     check.is_not_in("Assert:", "\n".join(line for line in md.splitlines() if "KILLED" in line))

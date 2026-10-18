@@ -4,8 +4,8 @@ This example demonstrates how Clastogen detects **evaluation blind spots** witho
 
 ## Overview
 
-- [`examples/mock_agent.py`](mock_agent.py): A customer support bot governed by `BANKING_SYSTEM_PROMPT`.
-- [`examples/test_banking_eval.py`](test_banking_eval.py): A pytest eval suite containing:
+- [`src/clastogen/demo/mock_agent.py`](../src/clastogen/demo/mock_agent.py): A customer support bot governed by `BANKING_SYSTEM_PROMPT`.
+- [`src/clastogen/demo/test_banking_eval.py`](../src/clastogen/demo/test_banking_eval.py): A pytest eval suite containing:
   - A **strong test** (`test_identity_verification_is_enforced`) that asserts identity checks.
   - A **superficial test** (`test_refund_handling_superficial_eval`) that only checks response length without verifying authorization limits.
 - [`examples/test_stats_usage.py`](test_stats_usage.py): Statistical assertions (`assert_pass_rate`, `assert_no_regression`) on seeded fake evaluators; the same code is shown in [docs/statistics.md](../docs/statistics.md).
@@ -13,7 +13,7 @@ This example demonstrates how Clastogen detects **evaluation blind spots** witho
 ## Run
 
 ```bash
-pytest --clastogen examples/test_banking_eval.py
+uvx --with clastogen pytest --pyargs clastogen.demo --clastogen
 ```
 
 ## What Happens

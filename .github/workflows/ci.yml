@@ -56,15 +56,21 @@ jobs:
       - name: Run test suite with coverage
         run: uv run pytest --cov=clastogen --cov-report=xml
 
-      - name: Run examples (demo and stats usage) under Clastogen with pytest-xdist
-        run: uv run pytest --clastogen -n 2 examples/
+      - name: Run demo and examples under Clastogen with pytest-xdist
+        run: |
+          uv run pytest --clastogen -n 2 --pyargs clastogen.demo
+          uv run pytest --clastogen -n 2 examples/
 
       - name: Build and verify distributions
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         run: |
           uv build
-          for dist in dist/*.whl dist/*.tar.gz; do
+          for dist in "$PWD"/dist/*.whl "$PWD"/dist/*.tar.gz; do
             uv run --isolated --no-project --with "$dist" python -c "import clastogen, clastogen.plugin; assert 'site-packages' in clastogen.__file__, clastogen.__file__; print(f'Imported clastogen {clastogen.__version__} from $dist')"
+            # Run from an empty directory: the repo's pytest pythonpath would shadow the installed package.
+            out="$(mktemp -d)"
+            (cd "$out" && uv run --isolated --no-project --with "$dist" pytest -p no:cacheprovider --pyargs clastogen.demo --clastogen --clastogen-json="$out/demo.json")
+            python -c "import json, sys; assert json.load(open(sys.argv[1]))['mutation_score'] == 60.0" "$out/demo.json"
           done
 
   lowest-deps:
@@ -86,8 +92,10 @@ jobs:
       - name: Run test suite
         run: uv run --no-sync pytest
 
-      - name: Run examples under Clastogen with pytest-xdist
-        run: uv run --no-sync pytest --clastogen -n 2 examples/
+      - name: Run demo and examples under Clastogen with pytest-xdist
+        run: |
+          uv run --no-sync pytest --clastogen -n 2 --pyargs clastogen.demo
+          uv run --no-sync pytest --clastogen -n 2 examples/
 
   fuzz:
     name: fuzz (atheris)

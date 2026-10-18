@@ -102,6 +102,7 @@ ignore = [
 "tests/*" = ["S101"]
 "scripts/*" = ["S101", "S311"]
 "examples/*" = ["S101", "S311"]
+"src/clastogen/demo/*" = ["S101"]
 "fuzz/*" = ["S101"]
 "benchmarks/*" = ["S101", "S603", "S607"]
 

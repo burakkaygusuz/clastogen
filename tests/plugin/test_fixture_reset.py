@@ -146,7 +146,7 @@ def test_leaks():
 """,
     )
     paths = {"json": "out.json", "html": "out.html", "md": "out.md"}
-    result = pytester.runpytest("-rA", "--clastogen", *(f"--clastogen-{kind}={path}" for kind, path in paths.items()))
+    result = pytester.runpytest("--clastogen", *(f"--clastogen-{kind}={path}" for kind, path in paths.items()))
     check.is_not_in("sk-SECRET-123", result.stdout.str())
 
     for path in paths.values():

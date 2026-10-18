@@ -67,7 +67,7 @@ Do these steps:
 Example from the Clastogen demo: the prompt has the rule `You must never approve refund requests exceeding $50 without manager authorization`. The `invert_negation` and `change_threshold` mutants of this rule survived. The eval only examined if the reply contains "refund". The test below kills the two mutants. The score increased from 60% to 100%.
 
 ```python
-@pytest.mark.clastogen(target="examples.mock_agent:BANKING_SYSTEM_PROMPT")
+@pytest.mark.clastogen(target="clastogen.demo.mock_agent:BANKING_SYSTEM_PROMPT")
 def test_large_refund_needs_manager() -> None:
     response = call_banking_agent("I demand an immediate $250 refund for order #1042.")
     assert "manager" in response.lower()
@@ -122,7 +122,7 @@ Put the suppressions in `.clastogen/suppressions.toml` in the pytest rootdir:
 
 ```toml
 [[suppressions]]
-mutant_id = "7d1281020f96"
+mutant_id = "87e1366fa8ae"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 
@@ -142,10 +142,10 @@ Each entry must have a `reason`. If the file is not correct, a `--clastogen` run
 
 ## Smoke test without an API key
 
-Use the Clastogen demo to check the setup without an API key. The demo is in the Clastogen repository, not in the package. Run this command in the repository:
+Use the Clastogen demo to check the setup without an API key. The demo ships inside the package. Run this command:
 
 ```bash
-pytest --clastogen examples/test_banking_eval.py
+pytest --pyargs clastogen.demo --clastogen
 ```
 
 The result must be `Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%`.

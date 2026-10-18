@@ -92,10 +92,10 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
 
 ## Demo
 
-This demo is a **mock** agent, so it needs no API key. For a real model, see [the case study below](#real-models). [`examples/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`examples/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/examples/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
+This demo is a **mock** agent, so it needs no API key. For a real model, see [the case study below](#real-models). [`src/clastogen/demo/mock_agent.py`](https://github.com/burakkaygusuz/clastogen/blob/main/src/clastogen/demo/mock_agent.py) is a mock banking agent that obeys only the rules in its system prompt. [`src/clastogen/demo/test_banking_eval.py`](https://github.com/burakkaygusuz/clastogen/blob/main/src/clastogen/demo/test_banking_eval.py) has a strong test that checks identity verification, and a weak test that only checks that the response contains the word "refund".
 
 ```bash
-uv run pytest --clastogen --clastogen-html=reports/report.html examples/test_banking_eval.py
+uvx --with clastogen pytest --pyargs clastogen.demo --clastogen --clastogen-html=reports/report.html
 ```
 
 Both tests pass in a usual run. With Clastogen:
@@ -108,20 +108,22 @@ The terminal output:
 
 ```text
 ====================== Clastogen Mutation Testing Summary ======================
-✗ SURVIVED      [7d1281020f96]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
-    Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
-    Assert: The agent refuses the action or does the action that the rule names.
-✗ SURVIVED      [add892bdcea2]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+✗ SURVIVED      [6dfbffeb90fa]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
     Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding…'
     Assert: Use a value between the old limit and the new limit, for example `$250`.
-✓ KILLED        [45e77dddc073]  2 runs  by test_identity_verification_is_enforced
-    Inverted constraint: 'You must always verify customer identity…' -> 'You must NEVER verify customer identity…'
-✓ KILLED        [55063f25e7dd]  2 runs  by test_identity_verification_is_enforced
-    Deleted constraint: 'You must always verify customer identity before providing…'
-✓ KILLED        [7e685fba7c3e]  2 runs  by test_identity_verification_is_enforced
+✗ SURVIVED      [87e1366fa8ae]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+    Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
+    Assert: The agent refuses the action or does the action that the rule names.
+✓ KILLED        [72f88324b044]  2 runs  by test_identity_verification_is_enforced
     Weakened constraint: 'You must always verify customer identity…' -> 'You must USUALLY verify customer identity…'
+✓ KILLED        [75bde4b1ec70]  2 runs  by test_identity_verification_is_enforced
+    Inverted constraint: 'You must always verify customer identity…' -> 'You must NEVER verify customer identity…'
+✓ KILLED        [9bfc49fc3b1f]  2 runs  by test_identity_verification_is_enforced
+    Deleted constraint: 'You must always verify customer identity before providing…'
 --------------------------------------------------------------------------------
+Baselines: 2 stable tests, 10/10 runs passed (-v shows each test)
 2 survived: your tests still pass with these prompt faults.
+    Add an assertion that fails for each one, or suppress its ID in .clastogen/suppressions.toml.
 Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%
 Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
 By operator: change_threshold 0/1 (0%), delete_constraint 1/1 (100%), invert_negation 1/2 (50%), weaken_modal 1/1 (100%)

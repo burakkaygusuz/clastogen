@@ -17,7 +17,7 @@
   - `--clastogen-fail-under MIN_SCORE`: the run fails if the score is less than `MIN_SCORE`, or if any mutant is `UNMEASURED`. It checks only the score, not the constraint coverage; read `constraint_coverage.percent` in the JSON for that.
   - `--clastogen-max-calls N`: runs at most N trials per process, see [Trial budget](#trial-budget).
   - `--clastogen-json PATH`: writes the results to a JSON file. The file contains `mutation_score`, `mutation_score_ci95`, `total_mutants`, `counts` (all seven statuses), `results` (one merged record for each mutant), `executions` (the record of each test for each mutant, which the HTML kill matrix uses), `baselines`, `by_operator`, `constraint_coverage`, `calls` and `fixed_calls`. For mutants that the SPRT did not run (`ERROR`, `SKIPPED`, `UNMEASURED`, `SUPPRESSED`), `sample_count` and `llr` are `null`.
-  - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text goes to the log. Mutated prompt text still appears in the reports, so review them before you publish them.
+  - Error fields hold only the exception class name (for example `unexpected execution error: RuntimeError`). The full exception text goes to the log. `-rA` or `-rP` prints the captured log, which holds the full exception text and may hold secrets. Mutated prompt text still appears in the reports, so review them before you publish them.
   - `--clastogen-oracle`: runs the probe tests on every mutant to label which mutants change behavior. See [Probes](#probes-which-survivors-matter). The JSON then has a `behavior` section.
   - `--clastogen-html PATH`: writes the same data to one HTML file.
   - `--clastogen-md PATH`: writes a short Markdown summary: the score and one table of mutants. Use it for GitHub job summaries and pull request comments. See [CI](../README.md#ci).
@@ -142,13 +142,13 @@ With xdist, the cap is split statically: each worker gets `N // workers`, and it
 
 ## Suppress mutants
 
-Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `7d1281020f96`, the inverted refund rule in the [Demo](../README.md#demo).
+Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `87e1366fa8ae`, the inverted refund rule in the [Demo](../README.md#demo).
 
 Put the IDs in `.clastogen/suppressions.toml` in your pytest `rootdir`. Each entry must have a `reason`:
 
 ```toml
 [[suppressions]]
-mutant_id = "7d1281020f96"
+mutant_id = "87e1366fa8ae"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 
