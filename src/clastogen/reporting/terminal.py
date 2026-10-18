@@ -12,7 +12,7 @@ from clastogen.models import (
     MutantStatus,
     MutationSummary,
 )
-from clastogen.reporting.render import STATUS_LABELS
+from clastogen.reporting.render import STATUS_LABELS, kill_hint
 from clastogen.reporting.scoring import (
     behavior_label,
     below_threshold,
@@ -105,6 +105,8 @@ def _write_summary(
             details.append(label)
         terminalreporter.write_line(f"{STATUS_LABELS[r.status]:<14}  {'  '.join(details)}", **_STATUS_MARKUP[r.status])
         terminalreporter.write_line(f"    {r.description}", light=True)
+        if hint := kill_hint(r):
+            terminalreporter.write_line(f"    Assert: {hint}", light=True)
 
     _write_baselines(terminalreporter, state.baselines, verbose)
 

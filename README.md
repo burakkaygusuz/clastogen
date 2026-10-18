@@ -110,8 +110,10 @@ The terminal output:
 ====================== Clastogen Mutation Testing Summary ======================
 ✗ SURVIVED      [7d1281020f96]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
     Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
+    Assert: The agent refuses the action or does the action that the rule names.
 ✗ SURVIVED      [add892bdcea2]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
     Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding…'
+    Assert: Use a value between the old limit and the new limit, for example `$250`.
 ✓ KILLED        [45e77dddc073]  2 runs  by test_identity_verification_is_enforced
     Inverted constraint: 'You must always verify customer identity…' -> 'You must NEVER verify customer identity…'
 ✓ KILLED        [55063f25e7dd]  2 runs  by test_identity_verification_is_enforced
