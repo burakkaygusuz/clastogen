@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "pytest>=8.4.0",
+    "pytest>=9.0.0",
 ]
 
 [project.urls]
@@ -93,9 +93,28 @@ select = [
     "PIE",
     "PERF",
     "RUF",
+    "C901",
+    "A",
+    "C4",
+    "DTZ",
+    "ERA",
+    "FA",
+    "FURB",
+    "G",
+    "LOG",
+    "PGH",
+    "PLE",
+    "PLW",
+    "PTH",
+    "PYI",
+    "RET",
+    "RSE",
+    "TID",
+    "TRY",
 ]
 ignore = [
     "E501",
+    "TRY003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -119,6 +138,8 @@ unused-ignore-comment = "error"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", ".", "benchmarks/support_desk"]
+strict = true
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["src/clastogen"]

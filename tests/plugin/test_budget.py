@@ -13,7 +13,8 @@ from pathlib import Path
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, max_steps=5)
 def test_strong():
-    Path("calls.log").open("a").write("x")
+    with Path("calls.log").open("a") as f:
+        f.write("x")
     assert "never approve refunds over $50." in agent.PROMPT
     assert "always verify identity" in agent.PROMPT
 """
@@ -48,7 +49,8 @@ from pathlib import Path
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, oracle_samples=5)
 def test_probe():
-    Path("calls.log").open("a").write("x")
+    with Path("calls.log").open("a") as f:
+        f.write("x")
     assert "never approve refunds over $50." in agent.PROMPT
     assert "always verify identity" in agent.PROMPT
 """

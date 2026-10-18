@@ -11,7 +11,8 @@ from pathlib import Path
 import agent
 
 def _log():
-    Path("calls.log").open("a").write("x")
+    with Path("calls.log").open("a") as f:
+        f.write("x")
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():

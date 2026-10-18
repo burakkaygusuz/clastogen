@@ -56,7 +56,7 @@ def test_ask_sends_the_current_prompt_the_order_record_and_the_output_format(mon
     assert support_agent.OUTPUT_FORMAT in user
 
 
-def fake_complete(system: str, user: str) -> str:
+def fake_complete(system: str, user: str) -> str:  # noqa: C901
     """A deterministic agent that obeys exactly the rules whose key phrase is still in the prompt."""
     record, message = user.removeprefix("Order record:\n").split("\n\nCustomer message:\n")
     record_data = json.loads(record)
