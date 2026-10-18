@@ -44,7 +44,7 @@ def measure_baseline(
             error = _BASELINE_SKIPPED
             break
         except TrialError as exc:
-            logger.error("Baseline trial failed for test '%s': %s", test_id, exc)
+            logger.exception("Baseline trial failed for test '%s'", test_id)
             error = str(exc)
             break
 
@@ -121,7 +121,7 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
         logger.debug("Mutant [%s] SKIPPED in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.SKIPPED)
     except TrialError as exc:
-        logger.error("Mutant [%s] ERROR in test '%s': %s", mutant.id, test_id, exc)
+        logger.exception("Mutant [%s] ERROR in test '%s'", mutant.id, test_id)
         return _execution(test_id, mutant, MutantStatus.ERROR, error=str(exc))
 
     status = MutantStatus(res.decision.value)
