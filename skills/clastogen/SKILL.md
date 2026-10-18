@@ -1,6 +1,7 @@
 ---
 name: clastogen
-description: Use this skill to make sure that the pytest evals of a Python LLM agent or chatbot find faults in its system prompt. The skill uses Clastogen (`pytest --clastogen`). Use it when the user wants mutation tests for a system prompt or wants to find blind spots in LLM evals. Use it when the user wants a higher Clastogen mutation score, has SURVIVED mutants in a report, or asks which survivors are real blind spots. Also use it when the user asks if the evals find a broken or changed prompt. Do not use it to write prompts, to compare models, or for eval tools that do not use pytest.
+description: Use this skill when the user wants to know if the pytest evals of a Python LLM agent or chatbot find faults in its system prompt. Use it to run Clastogen (`pytest --clastogen`), raise a mutation score, fix SURVIVED mutants, or find blind spots in evals. Use it also when the evals still pass after a prompt change broke the agent, or when the user asks which prompt rules the tests really check, even if the user does not say "mutation". Do not use it to write or improve prompts, to compare models, or for eval tools that do not use pytest.
+compatibility: Requires Python 3.11 or newer and pytest 9 or newer.
 license: MIT
 ---
 
@@ -14,7 +15,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
 
 1. Find the target. The system prompt must be a module-level string or a class attribute. Examples: `my_app.agent:SYSTEM_PROMPT`, `my_app.agent:Agent.PROMPT`.
 2. Make sure that the code reads the prompt at call time. Refer to the first item in the Gotchas section.
-3. Install Clastogen: `uv add --dev clastogen` or `pip install clastogen`.
+3. Install Clastogen: `uv add --dev clastogen`. If the project uses pip, run `pip install clastogen`.
 4. Add the marker to each eval that calls the agent with this prompt:
    ```python
    @pytest.mark.clastogen(target="my_app.agent:SYSTEM_PROMPT")
@@ -27,10 +28,11 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
    pytest --clastogen --clastogen-json=clastogen.json -k test_refund_over_limit_is_escalated
    ```
 7. Run all marked tests. Use the same command without `-k`.
-8. Show the survivors and the coverage from the JSON report. The last column is the probe label (`None` if no probe ran):
+8. Show the score, the coverage and the open mutants from the JSON report:
    ```bash
-   python -c "import json; d = json.load(open('clastogen.json')); print(d['mutation_score'], d['counts'], d['by_operator'], d['constraint_coverage']); [print(r['mutant_id'], r['status'], r['operator_name'], d.get('behavior', {}).get('labels', {}).get(r['mutant_id']), '|', r['original_snippet'], '->', r['mutated_snippet']) for r in d['results'] if r['status'] in ('SURVIVED', 'INCONCLUSIVE', 'ERROR')]"
+   python scripts/survivors.py clastogen.json
    ```
+   The path is relative to this skill directory. `open` lists each `SURVIVED`, `INCONCLUSIVE` and `ERROR` mutant with its snippets. `behavior` is `null` if no probe ran. If `total_mutants` is 0, refer to the Gotchas section.
 9. For each survivor, add an assertion. Refer to the section "Kill a survivor". If many survivors look harmless, offer probes to the user. Refer to the section "Find which survivors matter".
 10. If `constraint_coverage.untested` is not empty, no measured mutant covers these rules. Refer to the section "Untested constraints".
 11. Do steps 7 to 10 again. Stop when no `SURVIVED` mutant remains, or when the user accepts the other survivors.
@@ -138,7 +140,6 @@ Each entry must have a `reason`. If the file is not correct, a `--clastogen` run
 - **Clastogen finds rules by their words, not by their meaning.** A sentence is a candidate if it has a word such as `must`, `never`, `always`, `only`, `avoid`, `if`, `unless`, `escalate` or `refuse`, or if it has a number. Sentences such as "You are a support agent" are not candidates. A rule such as "Respond in the customer's language" has none of these words, so it makes no mutant. If a rule is important, ask the user before you write it again with a clear word. If the summary shows no mutants, do the same.
 - **`results` shows one test for each mutant.** To see all tests that a survivor passed, filter `executions` by `mutant_id`.
 - **The mutant ID is a hash of the operator, the target and the texts.** If you change the words of a rule or the name of the target, the IDs change. Then the old suppressions do not apply. A new Clastogen version that finds more rules can also change the IDs.
-- **A mock agent decides in 2 runs. A real LLM needs more runs.** Do not compare the run counts of the two.
 
 ## Smoke test without an API key
 
