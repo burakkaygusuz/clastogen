@@ -27,7 +27,7 @@ def test_probe():
 """
 
 
-@pytest.mark.parametrize(("oracle", "mutant_runs", "calls"), [(False, 2, 49), (True, 4, 64)])
+@pytest.mark.parametrize(("oracle", "mutant_runs", "calls"), [(False, 2, 52), (True, 4, 67)])
 def test_collect_only_previews_worst_case_calls_without_running_anything(
     pytester: pytest.Pytester, oracle: bool, mutant_runs: int, calls: int
 ) -> None:

@@ -60,4 +60,5 @@ def test_runs_many_trials():
     )
     result = pytester.runpytest_inprocess("--clastogen")
     result.assert_outcomes(passed=1)
-    assert len(scans) == 2
+    # The survivors of this prompt-insensitive test also trigger one canary injection.
+    assert len(scans) == 3

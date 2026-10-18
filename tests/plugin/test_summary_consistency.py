@@ -33,18 +33,22 @@ def test_survived_does_not_mask_killed_regardless_of_order(pytester: pytest.Pyte
     check.equal(data["counts"]["KILLED"], 2)
     check.equal(data["counts"]["SURVIVED"], 0)
     check.equal(data["mutation_score"], 100.0)
+    # The canary ERROR of test_unrelated yields to the kill by test_strong, so the run stays green.
+    check.equal(data["counts"]["ERROR"], 0)
+    check.equal(result.ret, pytest.ExitCode.OK)
 
 
-def test_test_never_touching_prompt_survives(pytester: pytest.Pytester) -> None:
+def test_test_never_touching_prompt_fails_the_canary(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(agent=AGENT, test_k2="import pytest, agent\n" + _UNRELATED)
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
     stdout = result.stdout.str()
     data = json.loads(json_out.read_text(encoding="utf-8"))
-    check.is_in("Mutation Score: 0.0% (0 of 2 killed)", stdout)
-    check.is_in("passed in test_unrelated", stdout)
-    check.equal(data["counts"]["SURVIVED"], 2)
-    check.equal(data["mutation_score"], 0.0)
+    check.is_in("canary: test passes with an empty prompt", stdout)
+    check.is_in("Mutation Score: N/A (0 of 0 killed; not scored: 2 error)", stdout)
+    check.equal(data["counts"]["ERROR"], 2)
+    check.equal(data["counts"]["SURVIVED"], 0)
+    check.equal(result.ret, pytest.ExitCode.TESTS_FAILED)
 
 
 def test_terminal_json_and_fail_under_agree_with_flaky_baseline(pytester: pytest.Pytester) -> None:
@@ -141,11 +145,13 @@ import pytest, agent
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1)
 def test_skips_under_mutation():
+    assert agent.ask()
     if "$500" in agent.ask():
         pytest.skip("skipped during mutation")
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=4)
 def test_errors_under_mutation():
+    assert agent.ask()
     if "usually verify" in agent.ask():
         raise KeyError("boom")
 """,

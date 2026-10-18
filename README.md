@@ -86,7 +86,7 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
    pytest --clastogen
    ```
 
-> **Important:** Clastogen replaces the prompt at call time. If your code copies the prompt at import time, all mutants survive. See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
+> **Important:** Clastogen replaces the prompt at call time. If your code copies the prompt at import time, the survivors become `ERROR` (the canary). See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
 
 ---
 

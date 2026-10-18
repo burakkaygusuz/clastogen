@@ -239,6 +239,7 @@ def noisy():
 
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=1, p0=0.90)
 def test_logs_once(noisy, caplog):
+    assert agent.PROMPT
     assert "leaked" not in caplog.text
     logging.getLogger().warning("leaked")
     assert [r.getMessage() for r in caplog.records] == ["leaked"]

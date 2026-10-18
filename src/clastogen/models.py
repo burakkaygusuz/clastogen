@@ -45,6 +45,8 @@ MIN_BASELINE_RATE = 0.80
 MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE_RUNS + 2)
 # Below this raw rate the selection by the 80% rule inflates p0, so false KILLs can exceed alpha (docs/statistics.md).
 NOISY_BASELINE_RATE = 0.90
+# Trials on an empty prompt after the mutants of a test that killed none: passing all of them means its survivors say nothing.
+CANARY_RUNS = 3
 
 
 def _check_int(name: str, value: object, minimum: int) -> None:
