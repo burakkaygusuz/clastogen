@@ -27,6 +27,7 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
         "counts": report["counts"],
         "by_operator": report["by_operator"],
         "constraint_coverage": report["constraint_coverage"],
+        "unmutated_sentences": report["unmutated_sentences"],
         "behavior_exposure_percent": behavior.get("exposure_percent"),
         "open": [
             {

@@ -93,6 +93,7 @@ class _RecordCollector:
             records = cast(RecordsPayload, payload)
             self._state.marked_tests_count += 1
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
+            self._state.unmutated.update((target, sentence) for target, sentence in records["unmutated"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
             self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
             for r in records["executions"]:
@@ -169,8 +170,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         item.user_properties.append((_RECORDS_KEY, to_payload(oracle=oracle)))
         return res
 
-    baselines, executions, constraints = run_mutation(item.nodeid, trial, params, prompt_text, state)
-    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints)))
+    baselines, executions, constraints, unmutated = run_mutation(item.nodeid, trial, params, prompt_text, state)
+    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints, unmutated)))
     return res
 
 
@@ -208,7 +209,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
     state.executions.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.executions, state.constraints, state.oracle)
+    summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)

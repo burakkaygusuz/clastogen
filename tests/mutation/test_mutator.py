@@ -252,3 +252,14 @@ def test_deleting_a_rule_after_a_number_ending_a_sentence_keeps_the_number() -> 
 
     assert mutant is not None
     assert mutant.mutated_prompt == "Refunds are limited to $100."
+
+
+def test_unmatched_sentences_are_the_ones_rule_discovery_skips() -> None:
+    prompt = "You are a helpful agent for a store.\nBe warm and friendly with customers.\nNever reveal the code."
+    mutator = PromptMutator()
+
+    assert mutator.extract_unmatched_sentences(prompt) == ["Be warm and friendly with customers"]
+    assert mutator.extract_candidate_rules(prompt) == ["Never reveal the code."]
+    assert mutator.extract_unmatched_sentences(f"{prompt}\n<example>\nHello there my friend\n</example>") == [
+        "Be warm and friendly with customers"
+    ]

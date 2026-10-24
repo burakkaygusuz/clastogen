@@ -24,6 +24,10 @@ def test_parallel_workers_reach_the_same_verdicts_as_a_serial_run(
     assert verdicts(runs["parallel"]) == verdicts(runs["serial"])
     assert {b["test_id"].split("::")[-1] for b in runs["parallel"]["baselines"]} == {"test_strong", "test_weak"}
     assert runs["parallel"]["constraint_coverage"] == runs["serial"]["constraint_coverage"]
+    assert runs["serial"]["unmutated_sentences"] == [
+        {"target": "agent:PROMPT", "sentence": "Keep the tone warm and friendly."}
+    ]
+    assert runs["parallel"]["unmutated_sentences"] == runs["serial"]["unmutated_sentences"]
     assert runs["parallel"]["by_operator"] == runs["serial"]["by_operator"]
     assert runs["parallel"]["mutation_score"] == runs["serial"]["mutation_score"] == 100.0
     # The serial run skips mutants that the strong test killed; each worker only knows its own kills.

@@ -35,6 +35,7 @@ class RecordsPayload(TypedDict):
     baselines: list[dict[str, Any]]
     executions: list[dict[str, Any]]
     constraints: list[list[str]]
+    unmutated: list[list[str]]
     oracle: list[dict[str, Any]]
 
 
@@ -152,6 +153,24 @@ class OracleRecord:
 
 
 @dataclass(frozen=True)
+class RuleCoverage:
+    """Evidence for one extracted rule: how many of its measured mutants were killed, and the lowest test ID among the tests that killed one.
+
+    A mutant counts as killed when any test killed it; killed_by is the lowest test ID among those killers.
+    """
+
+    target: str
+    rule: str
+    killed: int
+    mutants: int
+    killed_by: str | None
+
+    @property
+    def status(self) -> Literal["killed", "survived", "untested"]:
+        return "killed" if self.killed else "survived" if self.mutants else "untested"
+
+
+@dataclass(frozen=True)
 class MutationSummary:
     """Order-independent aggregate of all mutant evaluations in a session.
 
@@ -164,9 +183,8 @@ class MutationSummary:
     score: float | None
     calls: int = 0
     fixed_calls: int = 0
-    constraints_killed: int = 0
-    constraints_survived: int = 0
-    untested: tuple[str, ...] = ()
+    rules: tuple[RuleCoverage, ...] = ()
+    unmutated: tuple[tuple[str, str], ...] = ()
     behavior: dict[str, Behavior] = field(default_factory=dict)
 
     @property
@@ -174,8 +192,20 @@ class MutationSummary:
         return len(self.results)
 
     @property
+    def constraints_killed(self) -> int:
+        return sum(r.status == "killed" for r in self.rules)
+
+    @property
+    def constraints_survived(self) -> int:
+        return sum(r.status == "survived" for r in self.rules)
+
+    @property
+    def untested(self) -> tuple[str, ...]:
+        return tuple(r.rule for r in self.rules if r.status == "untested")
+
+    @property
     def constraints_total(self) -> int:
-        return self.constraints_killed + self.constraints_survived + len(self.untested)
+        return len(self.rules)
 
     @property
     def coverage(self) -> float | None:
@@ -226,6 +256,7 @@ class ClastogenPluginState:
     oracle: list[OracleRecord] = field(default_factory=list)
     summary: MutationSummary | None = None
     constraints: set[tuple[str, str]] = field(default_factory=set)
+    unmutated: set[tuple[str, str]] = field(default_factory=set)
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0

@@ -215,33 +215,35 @@ def _baseline_rejected(test_id: str, mutants: Sequence[Mutant], error: str | Non
 
 def run_mutation(
     test_id: str, trial: Callable[[], bool], params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
-) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
+) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]], list[list[str]]]:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
-    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints),
-    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
+    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints, unmutated),
+    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them and
+    unmutated are the [target, sentence] pairs that rule discovery skipped.
     """
     mutator = PromptMutator(target_symbol=params.target)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
+    unmutated = [[params.target, s] for s in mutator.extract_unmatched_sentences(prompt_text)]
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     mutants = [m for m in mutants if m.id not in state.killed_mutants]
 
     executions = [_execution(test_id, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
     pending = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not pending:
-        return [], executions, constraints
+        return [], executions, constraints, unmutated
 
     # The test starts only when at least one mutant can be funded after it.
     if not state.budget.fits(_baseline_calls(params) + params.max_steps):
         unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
-        return [], executions + unmeasured, constraints
+        return [], executions + unmeasured, constraints, unmutated
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
         baseline, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
         if config is None:
-            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints
+            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints, unmutated
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
@@ -256,7 +258,7 @@ def run_mutation(
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
         evaluated.append(execution)
-    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints
+    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints, unmutated
 
 
 def run_oracle(
@@ -317,6 +319,7 @@ def to_payload(
     baselines: Sequence[BaselineRecord] = (),
     executions: Sequence[MutantExecution] = (),
     constraints: Sequence[list[str]] = (),
+    unmutated: Sequence[list[str]] = (),
     oracle: Sequence[OracleRecord] = (),
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
@@ -324,5 +327,6 @@ def to_payload(
         "baselines": [asdict(b) for b in baselines],
         "executions": [{**asdict(r), "status": str(r.status)} for r in executions],
         "constraints": list(constraints),
+        "unmutated": list(unmutated),
         "oracle": [asdict(o) for o in oracle],
     }

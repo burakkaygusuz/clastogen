@@ -15,17 +15,20 @@ from clastogen.models import (
 )
 from clastogen.reporting.render import STATUS_LABELS, kill_hint
 from clastogen.reporting.scoring import (
+    MERGE_NOTE,
     behavior_label,
     below_threshold,
     calls_line,
     coverage_line,
     exposure_line,
     operator_line,
+    rule_line,
     score_line,
     survivor_tests,
+    weakest_first,
 )
 
-_UNTESTED_SHOWN = 10
+_SHOWN = 10
 
 _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
     MutantStatus.SURVIVED: {"red": True, "bold": True},
@@ -107,18 +110,31 @@ def _write_mutants(
             terminalreporter.write_line(f"    Assert: {hint}", light=True)
 
 
-def _write_untested(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, verbose: bool) -> None:
-    if summary.untested:
-        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
-        terminalreporter.write_line(
-            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _write_capped(terminalreporter: pytest.TerminalReporter, lines: list[str], verbose: bool) -> None:
+    shown = lines if verbose else lines[:_SHOWN]
+    for line in shown:
+        terminalreporter.write_line(f"    {line}", light=True)
+    if len(shown) < len(lines):
+        terminalreporter.write_line(f"    … and {len(lines) - len(shown)} more (-v shows all)", light=True)
+
+
+def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, verbose: bool) -> None:
+    if summary.rules:
+        terminalreporter.write_line(f"Rules, weakest first ({MERGE_NOTE})", yellow=True)
+        _write_capped(
+            terminalreporter, [f"{rule_line(r)}  {_clip(r.rule, 60)}" for r in weakest_first(summary.rules)], verbose
         )
-        for rule in shown:
-            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
-        if len(shown) < len(summary.untested):
-            terminalreporter.write_line(
-                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
-            )
+        if summary.untested:
+            terminalreporter.write_line("    Untested: raise max_mutants, fix errors or add tests.", light=True)
+    if summary.unmutated:
+        terminalreporter.write_line(
+            "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):", yellow=True
+        )
+        _write_capped(terminalreporter, [_clip(sentence, 100) for _, sentence in summary.unmutated], verbose)
 
 
 def _write_summary(
@@ -160,7 +176,7 @@ def _write_summary(
         terminalreporter.write_line(line, light=True)
     if line := coverage_line(summary):
         terminalreporter.write_line(line, bold=True)
-    _write_untested(terminalreporter, summary, verbose)
+    _write_rules(terminalreporter, summary, verbose)
 
 
 def write_preview(terminalreporter: pytest.TerminalReporter, plans: list[RunPlan]) -> None:

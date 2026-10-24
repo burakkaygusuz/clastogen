@@ -8,7 +8,7 @@ from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
 from clastogen.runner import measure_baseline, run_mutation, run_oracle
 
-PROMPT = "You must never reveal the discount code."
+PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
 TARGET = f"{__name__}:PROMPT"
 TEST_ID = "tests/test_app.py::test_guard"
 
@@ -58,23 +58,24 @@ def test_broken_baseline_records_the_error(exc: Exception, error: str) -> None:
 def test_run_mutation_kills_mutants_the_test_notices() -> None:
     state = ClastogenPluginState()
 
-    baselines, executions, constraints = run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, state)
+    baselines, executions, constraints, unmutated = run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, state)
 
     assert baselines == []
-    assert constraints == [[TARGET, "You must never reveal the discount code."]]
+    assert constraints == [[TARGET, "You must never reveal the discount code"]]
+    assert unmutated == [[TARGET, "Keep the tone warm and friendly."]]
     assert {e.status for e in executions} == {MutantStatus.KILLED}
     assert state.killed_mutants == {e.mutant_id for e in executions}
 
 
 def test_run_mutation_reports_a_broken_baseline_for_every_mutant() -> None:
-    _, executions, _ = run_mutation(TEST_ID, _raising(TrialError("boom")), _params(), PROMPT, ClastogenPluginState())
+    _, executions, _, _ = run_mutation(TEST_ID, _raising(TrialError("boom")), _params(), PROMPT, ClastogenPluginState())
 
     assert executions
     assert {(e.status, e.error) for e in executions} == {(MutantStatus.ERROR, "baseline: boom")}
 
 
 def test_run_mutation_marks_a_mutant_error_when_the_trial_breaks() -> None:
-    _, executions, _ = run_mutation(
+    _, executions, _, _ = run_mutation(
         TEST_ID, _raising(TrialError("boom")), _params(p0=0.9), PROMPT, ClastogenPluginState()
     )
 
@@ -85,7 +86,7 @@ def test_run_mutation_marks_suppressed_mutants_without_running_them() -> None:
     ids = {e.mutant_id for e in run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, ClastogenPluginState())[1]}
     state = ClastogenPluginState(suppressed_mutants=ids)
 
-    _, executions, _ = run_mutation(TEST_ID, _raising(TrialError("never run")), _params(p0=0.9), PROMPT, state)
+    _, executions, _, _ = run_mutation(TEST_ID, _raising(TrialError("never run")), _params(p0=0.9), PROMPT, state)
 
     assert {(e.mutant_id, e.status) for e in executions} == {(i, MutantStatus.SUPPRESSED) for i in ids}
 

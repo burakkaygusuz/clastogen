@@ -34,7 +34,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
    ```
    The path is relative to this skill directory. `open` lists each `SURVIVED`, `INCONCLUSIVE` and `ERROR` mutant with its snippets. `behavior` is `null` if no probe ran. If `total_mutants` is 0, refer to the Gotchas section.
 9. For each survivor, add an assertion. Refer to the section "Kill a survivor". If many survivors look harmless, offer probes to the user. Refer to the section "Find which survivors matter".
-10. If `constraint_coverage.untested` is not empty, no measured mutant covers these rules. Refer to the section "Untested constraints".
+10. In `constraint_coverage.rules`, a rule with `status` `untested` has no measured mutant. Refer to the section "Untested constraints".
 11. Do steps 7 to 10 again. Stop when no `SURVIVED` mutant remains, or when the user accepts the other survivors.
 12. Tell the user these items:
     - The mutation score and the constraint coverage before and after the changes.
@@ -84,7 +84,7 @@ Other statuses:
 
 ## Untested constraints
 
-`constraint_coverage` counts the rules that at least one mutant killed. It does not show which test killed them. A rule in `untested` has no mutant that the run measured. Common causes:
+`constraint_coverage` counts the rules that at least one mutant killed. `constraint_coverage.rules` has a row for each rule with `killed` of `mutants` and `killed_by` (the lowest test ID among the tests that killed one; a mutant is killed if any test kills it, so the name depends on which tests ran the mutant, not on scheduling luck alone). A rule with `status` `untested` has no mutant that the run measured. `unmutated_sentences` lists the prompt sentences that rule discovery skipped (no obligation word, no digit; sections and example blocks still get their own mutants); tell the user if one of them looks like a rule. Common causes:
 
 - The prompt has more rules than `max_mutants` (default 5). Clastogen makes a mutant for evenly spaced rules only. Increase `max_mutants` on the marker to the number of rules. Each extra mutant costs up to `max_steps` runs. Ask the user first.
 - The run for the mutant ended with `ERROR` or `SKIPPED`, or you suppressed the mutant (`SUPPRESSED`).

@@ -108,10 +108,10 @@ The terminal output:
 
 ```text
 ====================== Clastogen Mutation Testing Summary ======================
-✗ SURVIVED      [6dfbffeb90fa]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+✗ SURVIVED      [6dfbffeb90fa]  6 runs  passed in test_identity_verification_is_enforced
     Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding…'
     Assert: Use a value between the old limit and the new limit, for example `$250`.
-✗ SURVIVED      [87e1366fa8ae]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+✗ SURVIVED      [87e1366fa8ae]  6 runs  passed in test_identity_verification_is_enforced
     Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
     Assert: The agent refuses the action or does the action that the rule names.
 ✓ KILLED        [72f88324b044]  2 runs  by test_identity_verification_is_enforced
@@ -125,10 +125,17 @@ Baselines: 2 stable tests, 10/10 runs passed (-v shows each test)
 2 survived: your tests still pass with these prompt faults.
     Add an assertion that fails for each one, or suppress its ID in .clastogen/suppressions.toml.
 Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%
-Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
+Calls: 18 (a fixed-N test with the same error rates needs 80: 78% fewer)
 By operator: change_threshold 0/1 (0%), delete_constraint 1/1 (100%), invert_negation 1/2 (50%), weaken_modal 1/1 (100%)
 Constraint Coverage: 1 of 2 constraints killed (50.0%); 1 survived or inconclusive, 0 untested
+Rules, weakest first (A mutant is killed if any test kills it; a rule's mutants are those that were measured; the test named is the lowest test ID among the killers.)
+    survived: 0 of 2 mutants killed  You must never approve refund requests exceeding $50 withou…
+    killed: 3 of 3 mutants killed by test_identity_verification_is_enforced  You must always verify customer identity before providing b…
+Unmutated sentences (no rule keyword or digit, so no rule-level mutant):
+    Be professional and concise
 ```
+
+The `Rules` rows show, for each rule, how many of its measured mutants were killed and which test killed them (the lowest test ID among the killers). A mutant is killed if any test kills it. The `Unmutated sentences` are the sentences that rule discovery skips (no obligation word and no digit, outside `<example>` blocks), so no rule-level mutant covers them; a section or example mutant can still remove them.
 
 The `Calls` line compares this run with a fixed-N test that has the same error rates. Here the mock agent gives clean kills, so the saving is large. [Simulated averages](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md#savings-against-a-fixed-sample-size) are 48–56%.
 

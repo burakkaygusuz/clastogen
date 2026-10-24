@@ -63,3 +63,31 @@ def test_a_survivor_is_listed_with_the_test_that_passed_it() -> None:
     assert any("[m1]" in line and "passed in test_a" in line for line in lines)
     assert any(line.startswith("1 survived") for line in lines)
     assert lines[-1] == "="
+
+
+def test_terminal_snapshot_of_per_rule_evidence_caps_rows_and_sentences() -> None:
+    def run(test_id: str, mutant_id: str, rule: str, status: MutantStatus) -> MutantExecution:
+        return MutantExecution(test_id, "app:P", mutant_id, "d", "op", rule, "", status)
+
+    executions = [
+        run("t.py::test_b", "m1", "never leak", MutantStatus.KILLED),
+        run("t.py::test_a", "m1", "never leak", MutantStatus.KILLED),
+        run("t.py::test_a", "m2", "never leak", MutantStatus.SURVIVED),
+        run("t.py::test_a", "m3", "max 5", MutantStatus.SURVIVED),
+    ]
+    constraints = [("app:P", "never leak"), ("app:P", "max 5"), *(("app:P", f"never {i}") for i in range(10))]
+    sentences = [("app:P", f"Sentence {i:02}.") for i in range(12)]
+    state = ClastogenPluginState(executions=executions, marked_tests_count=1)
+    reporter = _Reporter()
+    terminal.write(reporter, state, summarize(executions, constraints, unmutated=sentences))  # ty: ignore[invalid-argument-type]
+
+    start = next(i for i, line in enumerate(reporter.lines) if line.startswith("Rules"))
+    assert reporter.lines[start:-1] == [
+        "Rules, weakest first (A mutant is killed if any test kills it; a rule's mutants are those that were measured; the test named is the lowest test ID among the killers.)",
+        *(f"    untested: no measured mutant  never {i}" for i in range(10)),
+        "    … and 2 more (-v shows all)",
+        "    Untested: raise max_mutants, fix errors or add tests.",
+        "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):",
+        *(f"    Sentence {i:02}." for i in range(10)),
+        "    … and 2 more (-v shows all)",
+    ]

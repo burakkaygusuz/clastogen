@@ -8,6 +8,7 @@ from importlib.resources import files
 from clastogen.models import MIN_BASELINE_RATE, BaselineRecord, MutantExecution, MutantStatus, MutationSummary
 from clastogen.reporting.scoring import (
     MEASURED,
+    MERGE_NOTE,
     behavior_label,
     calls_line,
     coverage_line,
@@ -15,9 +16,11 @@ from clastogen.reporting.scoring import (
     exposure_line,
     operator_line,
     operator_rates,
+    rule_line,
     score_interval,
     score_line,
     survivor_tests,
+    weakest_first,
 )
 
 # Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
@@ -249,9 +252,14 @@ def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
 def _coverage(summary: MutationSummary) -> str:
     lines = [escape(line) for line in (exposure_line(summary), operator_line(summary), coverage_line(summary)) if line]
     html = f'<p class="note">{"<br>".join(lines)}</p>' if lines else ""
-    if summary.untested:
-        items = "".join(f"<li><code>{escape(rule)}</code></li>" for rule in summary.untested)
-        html += f'<h3>Untested constraints</h3><ul class="legend">{items}</ul>'
+    if summary.rules:
+        items = "".join(
+            f"<li><code>{escape(r.rule)}</code> {escape(rule_line(r))}</li>" for r in weakest_first(summary.rules)
+        )
+        html += f'<h3>Rules</h3><p class="note">{escape(MERGE_NOTE)}</p><ul class="legend">{items}</ul>'
+    if summary.unmutated:
+        items = "".join(f"<li><code>{escape(sentence)}</code></li>" for _, sentence in summary.unmutated)
+        html += f'<h3>Unmutated sentences</h3><ul class="legend">{items}</ul>'
     return html
 
 
@@ -306,8 +314,12 @@ def render_markdown(
     for line in (exposure_line(summary), operator_line(summary), coverage_line(summary)):
         if line:
             lines += ["", line]
-    if summary.untested:
-        lines += ["", "Untested constraints:", "", *(f"- {_code(rule)}" for rule in summary.untested)]
+    if summary.rules:
+        lines += ["", f"Rules ({MERGE_NOTE})", "", "| Rule | Evidence |", "| --- | --- |"]
+        lines += [f"| {_code(r.rule)} | {_code(rule_line(r))} |" for r in weakest_first(summary.rules)]
+    if summary.unmutated:
+        lines += ["", "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):", ""]
+        lines += [f"- {_code(sentence)}" for _, sentence in summary.unmutated]
     if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
     if noisy := [b.test_id.split("::")[-1] for b in baselines if b.noisy]:
@@ -337,8 +349,10 @@ def render_json(
             "killed": summary.constraints_killed,
             "survived": summary.constraints_survived,
             "percent": summary.coverage,
-            "untested": list(summary.untested),
+            "merge_rule": MERGE_NOTE,
+            "rules": [{**asdict(r), "status": r.status} for r in summary.rules],
         },
+        "unmutated_sentences": [{"target": t, "sentence": x} for t, x in summary.unmutated],
         "results": [asdict(r) for r in summary.results],
         "executions": [asdict(r) for r in executions],
         "baselines": [{**asdict(b), "noisy": b.noisy} for b in baselines],

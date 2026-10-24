@@ -120,11 +120,11 @@ class PromptMutator:
     def __init__(self, target_symbol: str = "SYSTEM_PROMPT") -> None:
         self.target_symbol = target_symbol
 
-    def _rule_spans(self, prompt: str) -> list[Rule]:
-        """Finds candidate load-bearing sentences with their positions: those with an obligation, condition or action word or a number, minus role statements."""
+    def _sentences(self, prompt: str) -> list[Rule]:
+        """Splits the prompt into sentences and list items longer than 10 characters, minus role statements."""
         if not isinstance(prompt, str):
             raise TypeError(f"prompt must be a string, got {type(prompt).__name__}")
-        rules: list[Rule] = []
+        sentences: list[Rule] = []
         begin = 0
         for sep in [*self.SENTENCE_SPLIT_PATTERN.finditer(prompt), None]:
             line = prompt[begin : sep.start() if sep else len(prompt)]
@@ -132,14 +132,27 @@ class PromptMutator:
             marker = re.match(_LIST_MARKER, stripped)
             skipped = len(line) - len(line.lstrip()) + (marker.end() if marker else 0)
             cleaned = stripped[marker.end() if marker else 0 :]
-            if len(cleaned) > 10 and not self.ROLE_PATTERN.match(cleaned) and self.RULE_PATTERN.search(cleaned):
-                rules.append(Rule(begin + skipped, cleaned))
+            if len(cleaned) > 10 and not self.ROLE_PATTERN.match(cleaned):
+                sentences.append(Rule(begin + skipped, cleaned))
             begin = sep.end() if sep else begin
-        return rules
+        return sentences
+
+    def _rule_spans(self, prompt: str) -> list[Rule]:
+        """Finds candidate load-bearing sentences with their positions: those with an obligation, condition or action word or a number."""
+        return [s for s in self._sentences(prompt) if self.RULE_PATTERN.search(s.text)]
 
     def extract_candidate_rules(self, prompt: str) -> list[str]:
         """Extracts the text of the candidate rules found by _rule_spans."""
         return [rule.text for rule in self._rule_spans(prompt)]
+
+    def extract_unmatched_sentences(self, prompt: str) -> list[str]:
+        """Extracts the sentences that rule discovery skips, so no rule-level operator makes a mutant for them; example blocks are left out."""
+        examples = [b for b in find_blocks(prompt) if b.kind == "example"]
+        return [
+            s.text
+            for s in self._sentences(prompt)
+            if not self.RULE_PATTERN.search(s.text) and not any(b.start <= s.start < b.end for b in examples)
+        ]
 
     def _delete_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Removes rule with its bullet and trailing punctuation; None when the prompt is unchanged."""

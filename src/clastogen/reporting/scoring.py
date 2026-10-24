@@ -1,40 +1,49 @@
 from collections.abc import Iterable
 from typing import Any
 
-from clastogen.models import BEHAVIOR_ORDER, Behavior, MutantExecution, MutantStatus, MutationSummary, OracleRecord
+from clastogen.models import (
+    BEHAVIOR_ORDER,
+    Behavior,
+    MutantExecution,
+    MutantStatus,
+    MutationSummary,
+    OracleRecord,
+    RuleCoverage,
+)
 from clastogen.stats.assertions import compute_wilson_interval
 
 _RANK = {status: rank for rank, status in enumerate(MutantStatus)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
 
 
-def _constraint_coverage(
+def _rule_coverage(
     unique: tuple[MutantExecution, ...], constraints: Iterable[tuple[str, str]]
-) -> tuple[int, int, tuple[str, ...]]:
-    killed_keys = {(r.target, r.original_snippet) for r in unique if r.status == MutantStatus.KILLED}
-    measured_keys = {(r.target, r.original_snippet) for r in unique if r.status in MEASURED}
-    killed = survived = 0
-    untested: list[str] = []
-    for key in sorted(set(constraints)):
-        if key in killed_keys:
-            killed += 1
-        elif key in measured_keys:
-            survived += 1
-        else:
-            untested.append(key[1])
-    return killed, survived, tuple(untested)
+) -> tuple[RuleCoverage, ...]:
+    """Tallies the merged measured mutants of each rule; the rules sort by (target, text)."""
+    by_rule: dict[tuple[str, str], list[MutantExecution]] = {}
+    for r in unique:
+        if r.status in MEASURED:
+            by_rule.setdefault((r.target, r.original_snippet), []).append(r)
+    rows = []
+    for target, rule in sorted(set(constraints)):
+        mutants = by_rule.get((target, rule), [])
+        killers = [r.test_id for r in mutants if r.status == MutantStatus.KILLED]
+        rows.append(RuleCoverage(target, rule, len(killers), len(mutants), min(killers, default=None)))
+    return tuple(rows)
 
 
 def summarize(
     results: Iterable[MutantExecution],
     constraints: Iterable[tuple[str, str]] = (),
     oracle: Iterable[OracleRecord] = (),
+    unmutated: Iterable[tuple[str, str]] = (),
 ) -> MutationSummary:
     """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
 
     constraints are the (target, rule) pairs extracted from the prompts; each is killed, survived (measured, never
     killed) or untested (no mutant measured), whatever the score says. A mutant gets the strongest label of any probe
     in oracle (changed, then suspected, then no_change_found), so a probe added later can only raise a label.
+    unmutated are the (target, sentence) pairs that rule discovery skipped.
     """
     behavior: dict[str, Behavior] = {}
     for o in oracle:
@@ -58,18 +67,35 @@ def summarize(
     measurable = sum(counts[status] for status in MEASURED)
     score = counts[MutantStatus.KILLED] / measurable * 100.0 if measurable else None
 
-    killed, survived, untested = _constraint_coverage(unique, constraints)
     return MutationSummary(
         results=unique,
         counts=counts,
         score=score,
         calls=calls,
         fixed_calls=fixed_calls,
-        constraints_killed=killed,
-        constraints_survived=survived,
-        untested=untested,
+        rules=_rule_coverage(unique, constraints),
+        unmutated=tuple(sorted(set(unmutated))),
         behavior=behavior,
     )
+
+
+def rule_line(r: RuleCoverage) -> str:
+    """Returns the evidence of one rule, shared by the terminal and the Markdown report."""
+    if r.status == "untested":
+        return "untested: no measured mutant"
+    line = f"{r.status}: {r.killed} of {r.mutants} mutants killed"
+    return f"{line} by {r.killed_by.split('::')[-1]}" if r.killed_by else line
+
+
+def weakest_first(rules: Iterable[RuleCoverage]) -> list[RuleCoverage]:
+    """Orders rules untested, survived, killed, so a cut list hides the best protected ones."""
+    return sorted(rules, key=lambda r: ("untested", "survived", "killed").index(r.status))
+
+
+MERGE_NOTE = (
+    "A mutant is killed if any test kills it; a rule's mutants are those that were measured; "
+    "the test named is the lowest test ID among the killers."
+)
 
 
 def survivor_tests(executions: Iterable[MutantExecution]) -> dict[str, list[str]]:

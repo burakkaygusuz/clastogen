@@ -13,7 +13,7 @@
   {"split": "train", "should_trigger": false, "query": "why is my llm-as-judge eval flaky? it passes 7 out of 10 runs"},
   {"split": "validation", "should_trigger": true, "query": "tests/test_banking.py has 12 evals for BANKING_PROMPT. if somebody weakens a 'must never' rule, would we see a red test?"},
   {"split": "validation", "should_trigger": true, "query": "clastogen says 3 mutants SURVIVED, one is change_threshold. what assertion do i add?"},
-  {"split": "validation", "should_trigger": true, "query": "pytest --clastogen printed 'Untested constraints' for my agent, what do i do"},
+  {"split": "validation", "should_trigger": true, "query": "pytest --clastogen printed 'untested: no measured mutant' for a rule in my agent, what do i do"},
   {"split": "validation", "should_trigger": true, "query": "try the clastogen demo without an api key, i want to see what a report looks like"},
   {"split": "validation", "should_trigger": false, "query": "generate 10 adversarial user messages to jailbreak my chatbot's system prompt"},
   {"split": "validation", "should_trigger": false, "query": "my deepeval metrics fail in CI with a timeout, how do i raise it?"},
