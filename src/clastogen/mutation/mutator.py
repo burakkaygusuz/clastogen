@@ -312,7 +312,7 @@ class PromptMutator:
                     target_symbol=c.target,
                     operator_name=CUSTOM_OPERATOR,
                     original_snippet=c.original,
-                    mutated_snippet=c.mutated or "[DELETED]",
+                    mutated_snippet=c.mutated,
                     mutated_prompt=prompt.replace(c.original, c.mutated),
                     description=c.description,
                 )

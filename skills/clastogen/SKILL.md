@@ -46,7 +46,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
 Each item in `results` has these fields:
 
 - `original_snippet`: the full rule. For `delete_section` and `delete_example`, it is the whole block.
-- `mutated_snippet`: the broken rule. For a deleted rule, the value is `[DELETED]`.
+- `mutated_snippet`: the broken rule. For a rule deleted by a built-in operator, the value is `[DELETED]`; for a custom mutant with empty `mutated`, it is empty.
 - `operator_name`: the type of change. Refer to the table below.
 
 Do these steps:
@@ -143,7 +143,7 @@ Put the suppressions in `.clastogen/suppressions.toml` in the pytest rootdir:
 
 ```toml
 [[suppressions]]
-mutant_id = "87e1366fa8ae"
+mutant_id = "bb49e3ca17a0"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 

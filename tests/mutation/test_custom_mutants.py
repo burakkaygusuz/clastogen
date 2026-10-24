@@ -63,7 +63,7 @@ def test_an_empty_mutated_text_deletes_the_snippet() -> None:
     (mutant,) = _gen(TURKISH, [CustomMutant("T", " ve nazik konuş", "", "drops")])
 
     assert mutant.mutated_prompt == TURKISH.replace(" ve nazik konuş", "")
-    assert mutant.mutated_snippet == "[DELETED]"
+    assert mutant.mutated_snippet == ""
 
 
 def test_the_id_is_stable_and_hashes_the_texts() -> None:
@@ -159,3 +159,15 @@ def test_a_sentence_inside_an_example_block_is_not_covered() -> None:
 
     assert mutator.extract_candidate_rules(prompt) == []
     assert "Kibar ol ve nazik konuş" not in mutator.extract_unmatched_sentences(prompt)
+
+
+def test_snippet_pairs_that_concatenate_to_the_same_text_get_different_ids() -> None:
+    def make(original: str, mutated: str) -> str:
+        return Mutant.create("T", CUSTOM_OPERATOR, original, mutated, "p", "d").id
+
+    assert make("refund->", "x") != make("refund", "->x")
+    deleted, literal = (
+        _gen(TURKISH, [CustomMutant("T", " ve nazik konuş", mutated, "d")])[0].id for mutated in ("", "[DELETED]")
+    )
+    assert deleted != literal
+    assert len({make("a", "b"), make("a:b", ""), make("a", "b:")}) == 3

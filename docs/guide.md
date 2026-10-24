@@ -149,13 +149,13 @@ With xdist, the cap is split statically: each worker gets `N // workers`, and it
 
 ## Suppress mutants
 
-Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `87e1366fa8ae`, the inverted refund rule in the [Demo](../README.md#demo).
+Sometimes a mutant survives because the foundation model obeys the rule from its training. This is an equivalent mutant. Suppress equivalent mutants, so that they do not change your score. Clastogen shows suppressed mutants as `SUPPRESSED`, and the Mutation Score does not include them. The mutant ID is the 12-character hash in the summary. An example is `bb49e3ca17a0`, the inverted refund rule in the [Demo](../README.md#demo).
 
 Put the IDs in `.clastogen/suppressions.toml` in your pytest `rootdir`. Each entry must have a `reason`:
 
 ```toml
 [[suppressions]]
-mutant_id = "87e1366fa8ae"
+mutant_id = "bb49e3ca17a0"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 

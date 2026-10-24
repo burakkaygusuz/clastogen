@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -102,8 +103,8 @@ class Mutant:
         mutated_prompt: str,
         description: str,
     ) -> Mutant:
-        """Constructs a mutant with a stable 12-character SHA-256 hash ID."""
-        content_key = f"{operator_name}:{target_symbol}:{original_snippet}->{mutated_snippet}"
+        """Constructs a mutant with a stable 12-character SHA-256 hash ID over the JSON-encoded fields."""
+        content_key = json.dumps([operator_name, target_symbol, original_snippet, mutated_snippet], ensure_ascii=False)
         stable_id = hashlib.sha256(content_key.encode("utf-8")).hexdigest()[:12]
         return cls(
             id=stable_id,

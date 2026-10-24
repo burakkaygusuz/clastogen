@@ -108,17 +108,17 @@ The terminal output:
 
 ```text
 ====================== Clastogen Mutation Testing Summary ======================
-✗ SURVIVED      [6dfbffeb90fa]  6 runs  passed in test_identity_verification_is_enforced
+✗ SURVIVED      [fef2fa3ee004]  6 runs  passed in test_identity_verification_is_enforced
     Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding…'
     Assert: Use a value between the old limit and the new limit, for example `$250`.
-✗ SURVIVED      [87e1366fa8ae]  6 runs  passed in test_identity_verification_is_enforced
+✗ SURVIVED      [bb49e3ca17a0]  6 runs  passed in test_identity_verification_is_enforced
     Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
     Assert: The agent refuses the action or does the action that the rule names.
-✓ KILLED        [72f88324b044]  3 runs  by test_identity_verification_is_enforced
+✓ KILLED        [398de66fceda]  3 runs  by test_identity_verification_is_enforced
     Weakened constraint: 'You must always verify customer identity…' -> 'You must USUALLY verify customer identity…'
-✓ KILLED        [75bde4b1ec70]  3 runs  by test_identity_verification_is_enforced
+✓ KILLED        [dc9dbcc841a9]  3 runs  by test_identity_verification_is_enforced
     Inverted constraint: 'You must always verify customer identity…' -> 'You must NEVER verify customer identity…'
-✓ KILLED        [9bfc49fc3b1f]  3 runs  by test_identity_verification_is_enforced
+✓ KILLED        [de806cb80393]  3 runs  by test_identity_verification_is_enforced
     Deleted constraint: 'You must always verify customer identity before providing…'
 --------------------------------------------------------------------------------
 Baselines: 2 stable tests, 10/10 runs passed (-v shows each test)
