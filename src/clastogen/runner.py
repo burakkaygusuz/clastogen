@@ -21,7 +21,8 @@ from clastogen.models import (
     SPRTConfig,
     TrialBudget,
 )
-from clastogen.mutation.injection import override_prompt
+from clastogen.mutation.http_hook import rewrite_requests
+from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
@@ -106,8 +107,9 @@ def _execution(
 
 
 def _inject(stack: ExitStack, target: str, prompt: str) -> None:
-    """Patches the prompt in for the life of stack; an injection failure becomes a TrialError."""
+    """Patches the prompt in for the life of stack, as an attribute and in httpx requests; a failure becomes a TrialError."""
     try:
+        stack.enter_context(rewrite_requests(getattr(*resolve_target(target)), prompt))
         stack.enter_context(override_prompt(target, prompt))
     except Exception as exc:
         raise TrialError(f"prompt injection failed: {type(exc).__name__}") from exc

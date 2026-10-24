@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
+import httpx
 import pytest
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
-from clastogen.runner import measure_baseline, run_mutation, run_oracle
+from clastogen.runner import _canary_passes, measure_baseline, run_mutation, run_oracle
 
 PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
 TARGET = f"{__name__}:PROMPT"
@@ -75,6 +77,24 @@ def test_alpha_is_divided_by_the_tests_of_the_target() -> None:
 
     # A 10/10 baseline kills an always-failing mutant in 2 calls at alpha 0.05 and in 4 at 0.05 / 12.
     assert {e.sample_count for e in executions} == {4}
+
+
+COPY = PROMPT  # a copy made at import time, which the attribute replacement cannot reach
+
+
+def _http_guard() -> bool:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": "never" in json.loads(request.content)["system"].lower()})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        return client.post("http://llm", json={"system": COPY}).json()["ok"]
+
+
+def test_httpx_hook_reaches_a_prompt_copied_at_import_time() -> None:
+    _, executions, _, _ = run_mutation(TEST_ID, _http_guard, _params(p0=0.9), PROMPT, ClastogenPluginState())
+
+    assert MutantStatus.KILLED in {e.status for e in executions}
+    assert not _canary_passes(_http_guard, TARGET)
 
 
 def test_run_mutation_reports_a_broken_baseline_for_every_mutant() -> None:
