@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from clastogen.models import (
@@ -37,6 +37,7 @@ def summarize(
     constraints: Iterable[tuple[str, str]] = (),
     oracle: Iterable[OracleRecord] = (),
     unmutated: Iterable[tuple[str, str]] = (),
+    tests: Mapping[str, int] | None = None,
 ) -> MutationSummary:
     """Merges records per mutant by status precedence and scores killed / (killed + survived + inconclusive).
 
@@ -75,6 +76,7 @@ def summarize(
         fixed_calls=fixed_calls,
         rules=_rule_coverage(unique, constraints),
         unmutated=tuple(sorted(set(unmutated))),
+        tests=dict(sorted((tests or {}).items())),
         behavior=behavior,
     )
 

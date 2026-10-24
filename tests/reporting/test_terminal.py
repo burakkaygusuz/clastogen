@@ -32,7 +32,7 @@ class _Reporter:
 
 def _write(state: ClastogenPluginState, **options: bool) -> list[str]:
     reporter = _Reporter(**options)
-    terminal.write(reporter, state, summarize(state.executions))  # ty: ignore[invalid-argument-type]
+    terminal.write(reporter, state, summarize(state.executions, tests=state.tests))  # ty: ignore[invalid-argument-type]
     return reporter.lines
 
 
@@ -40,6 +40,21 @@ def _execution(status: MutantStatus) -> MutantExecution:
     return MutantExecution(
         "t.py::test_a", "app:P", "m1", "Deleted constraint: 'x'", "delete_constraint", "x", "", status
     )
+
+
+def test_inconclusive_hint_names_the_split_of_the_inconclusive_target() -> None:
+    def execution(target: str, mutant_id: str, status: MutantStatus) -> MutantExecution:
+        return MutantExecution("t.py::test_a", target, mutant_id, "d", "delete_constraint", "x", "", status)
+
+    state = ClastogenPluginState(tests={"app:A": 12, "app:B": 1})
+    state.executions = [
+        execution("app:A", "a1", MutantStatus.KILLED),
+        execution("app:B", "b1", MutantStatus.INCONCLUSIVE),
+    ]
+    assert not any("alpha is divided" in line for line in _write(state))
+
+    state.executions.append(execution("app:A", "a2", MutantStatus.INCONCLUSIVE))
+    assert any("With 12 tests on one target, alpha is divided by 12" in line for line in _write(state))
 
 
 def test_no_marked_tests_is_reported() -> None:

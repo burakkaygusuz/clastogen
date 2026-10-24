@@ -37,6 +37,7 @@ class RecordsPayload(TypedDict):
     constraints: list[list[str]]
     unmutated: list[list[str]]
     oracle: list[dict[str, Any]]
+    tests: dict[str, int]
 
 
 # Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
@@ -176,6 +177,7 @@ class MutationSummary:
 
     calls and fixed_calls sum sample_count and fixed_n over every sampled execution, not only the merged results.
     behavior maps a mutant ID to the strongest label of any probe; mutants no probe measured are absent.
+    tests maps a target to T, the number of tests the SPRT alpha of its mutants is divided by.
     """
 
     results: tuple[MutantExecution, ...]
@@ -185,6 +187,7 @@ class MutationSummary:
     fixed_calls: int = 0
     rules: tuple[RuleCoverage, ...] = ()
     unmutated: tuple[tuple[str, str], ...] = ()
+    tests: dict[str, int] = field(default_factory=dict)
     behavior: dict[str, Behavior] = field(default_factory=dict)
 
     @property
@@ -257,6 +260,7 @@ class ClastogenPluginState:
     summary: MutationSummary | None = None
     constraints: set[tuple[str, str]] = field(default_factory=set)
     unmutated: set[tuple[str, str]] = field(default_factory=set)
+    tests: dict[str, int] = field(default_factory=dict)
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
     marked_tests_count: int = 0

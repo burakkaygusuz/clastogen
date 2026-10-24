@@ -222,6 +222,8 @@ def run_mutation(
     where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them and
     unmutated are the [target, sentence] pairs that rule discovery skipped.
     """
+    # Bonferroni: an unchanged mutant faces every test of the target, and any one kill counts, so each SPRT gets alpha / T.
+    params = replace(params, alpha=params.alpha / state.tests.get(params.target, 1))
     mutator = PromptMutator(target_symbol=params.target)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
     unmutated = [[params.target, s] for s in mutator.extract_unmatched_sentences(prompt_text)]
@@ -321,6 +323,7 @@ def to_payload(
     constraints: Sequence[list[str]] = (),
     unmutated: Sequence[list[str]] = (),
     oracle: Sequence[OracleRecord] = (),
+    tests: dict[str, int] | None = None,
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
@@ -329,4 +332,5 @@ def to_payload(
         "constraints": list(constraints),
         "unmutated": list(unmutated),
         "oracle": [asdict(o) for o in oracle],
+        "tests": tests or {},
     }

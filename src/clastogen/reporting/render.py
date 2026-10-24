@@ -338,6 +338,7 @@ def render_json(
         "mutation_score_ci95": score_interval(summary),
         "total_mutants": summary.total,
         "counts": {status.value: n for status, n in summary.counts.items()},
+        "tests_per_target": summary.tests,
         "calls": summary.calls,
         "fixed_calls": summary.fixed_calls,
         "by_operator": {

@@ -94,6 +94,7 @@ class _RecordCollector:
             self._state.marked_tests_count += 1
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
             self._state.unmutated.update((target, sentence) for target, sentence in records["unmutated"])
+            self._state.tests.update(records["tests"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
             self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
             for r in records["executions"]:
@@ -171,22 +172,41 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         return res
 
     baselines, executions, constraints, unmutated = run_mutation(item.nodeid, trial, params, prompt_text, state)
-    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints, unmutated)))
+    tests = {params.target: state.tests.get(params.target, 1)}
+    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints, unmutated, tests=tests)))
     return res
 
 
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node) -> None:  # noqa: ANN001  # xdist WorkerController, xdist is optional
+    node.workerinput["clastogen_repeats"] = node.workerinput["workercount"] if node.config.option.dist == "each" else 1
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
-    """Under --collect-only, plans every marked test so the terminal can preview the run without executing it."""
+    """Counts the tests per target after every deselection (-k, --lf), and under --collect-only previews the run."""
     config = session.config
-    if not config.option.collectonly or not config.getoption("--clastogen", False):
+    if not config.getoption("--clastogen", False):
         return
 
     state = config.stash[STATE_KEY]
-    with_oracle = config.getoption("--clastogen-oracle", False)
+    # Probes get no SPRT verdict, so they are not part of the family. Every worker collects every selected test,
+    # so each counts the whole family; with --dist each a worker runs all of them again, so the family grows by the
+    # worker count (the controller says so in workerinput). A bad marker is reported when the test runs, not here.
+    repeats = getattr(config, "workerinput", {}).get("clastogen_repeats", 1)
     for item in session.items:
         if marker := item.get_closest_marker("clastogen"):
-            params, prompt_text = _parse_marker(item, marker)
-            state.preview.append(plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle))
+            try:
+                params = ClastogenParams(*marker.args, **marker.kwargs)
+            except (TypeError, ValueError):
+                continue
+            if params.oracle_samples is None:
+                state.tests[params.target] = state.tests.get(params.target, 0) + repeats
+    if config.option.collectonly:
+        with_oracle = config.getoption("--clastogen-oracle", False)
+        for item in session.items:
+            if marker := item.get_closest_marker("clastogen"):
+                params, prompt_text = _parse_marker(item, marker)
+                state.preview.append(plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle))
 
 
 def _write_report(path: str, text: str) -> None:
@@ -209,7 +229,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
     state.executions.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated)
+    summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated, state.tests)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)

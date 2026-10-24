@@ -1,6 +1,6 @@
 # Statistics
 
-LLM output is random, so one run of a test proves little. Clastogen uses Wald's Sequential Probability Ratio Test (SPRT): it runs a test again only until the evidence is sufficient. The important result: severe prompt regressions are found with few calls (2 for a clear kill), and ambiguous cases are reported as `INCONCLUSIVE` instead of guessed.
+LLM output is random, so one run of a test proves little. Clastogen uses Wald's Sequential Probability Ratio Test (SPRT): it runs a test again only until the evidence is sufficient. The important result: severe prompt regressions are found with few calls (2 for a clear kill with one test per target), and ambiguous cases are reported as `INCONCLUSIVE` instead of guessed.
 
 ## Statistical assertions (Python API)
 
@@ -46,7 +46,7 @@ def test_broken_prompt_is_detected_as_regression() -> None:
 
 ## SPRT performance and limits
 
-The SPRT uses Wald's sequential boundaries to set the number of samples. For a severe defect with a measured 10/10 baseline, the SPRT stops after only 2 calls. With an explicit $p_0 = 0.90$, it stops after 3 calls. For results near the boundary, the SPRT stops at $N_{\max}$.
+The SPRT uses Wald's sequential boundaries to set the number of samples. For a severe defect with a measured 10/10 baseline, the SPRT stops after only 2 calls. With an explicit $p_0 = 0.90$, it stops after 3 calls. These numbers, and Scenarios 1 to 3b, are for one test per target; with $T$ tests the SPRT of each test runs at $\alpha / T$ (see Many tests), and a clear kill from a 10/10 baseline takes 3 calls at $T = 2$, 4 at $T = 12$ and 5 at $T = 50$. For results near the boundary, the SPRT stops at $N_{\max}$.
 
 These results come from a Monte Carlo simulation (`PYTHONPATH=src uv run python scripts/simulate_sprt.py`, 10,000 trials for each row, seed 42):
 
@@ -113,6 +113,24 @@ Scenario 3b uses the same accepted baselines. It replaces the SPRT with an exact
 | **0.99** | 0.99 | 0.01% | 0.00% | 0.00% | 0.00% | 0.00% |
 | **0.99** | 0.69 | 59.70% | 75.81% | 89.64% | 96.28% | 99.42% |
 
+### Scenario 3c: $T$ tests on one target (Bonferroni split)
+
+Each of $T$ tests has its own 10-run baseline and runs its SPRT against one mutant (`delta = 0.30`, `max_steps = 20`). Cells give the false-kill % of an unchanged mutant (killed by any test; a test with a rejected baseline counts as not killing, so the T=1 column is lower than the accepted-baselines-only rates in the guide, 2.2/5.0/8.6%), without the split ($\alpha = 0.05$) and with it ($\alpha / T$); 10,000 trials, seed 42:
+
+| Base P | T=1         | T=12         | T=50         |
+| :----- | :---------- | :----------- | :----------- |
+| 0.90   | 2.1 / 2.1   | 22.0 / 2.4   | 64.9 / 2.0   |
+| 0.85   | 4.3 / 4.3   | 41.2 / 8.9   | 89.2 / 10.7  |
+| 0.80   | 6.5 / 6.5   | 53.9 / 17.4  | 96.1 / 25.8  |
+
+For a mutant that drops exactly $\delta$ from 0.90 (one mutant, $\alpha / T$):
+
+| T  | KILLED % | INCONCLUSIVE % | SURVIVED % | ASN  |
+| :- | :------- | :------------- | :--------- | :--- |
+| 1  | 66.1     | 18.2           | 15.6       | 10.8 |
+| 12 | 44.3     | 41.0           | 14.8       | 15.2 |
+| 50 | 32.0     | 53.3           | 14.7       | 16.5 |
+
 ### Statistical caveats
 
 The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scenarios 1 and 2). The full flow does not have a known $p_0$, so these sources of error apply:
@@ -121,6 +139,7 @@ The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scena
 - **Estimated $p_0$:** The Laplace estimate from 10 runs is noisy. For a high true pass rate, it is biased down: 10/10 gives $p_0 = 0.917$.
 - **Selection by the 80% rule:** The plugin accepts a low-rate baseline only after a lucky streak, so the estimated $p_0$ is too high. The false-kill rate for an unchanged mutant is then 18.93% at a true rate of 0.70 and 8.92% at 0.80. Both rates are above the nominal 5%. A fixed-N test at the estimated $p_0$ has the same problem (Scenario 3b).
 - **Power at a drop of exactly $\delta$:** For baselines of 0.90 or more, the SPRT kills only 64–66% of these mutants, not the nominal 90%. Larger drops are killed reliably.
+- **Many tests:** A mutant is killed if any test kills it, so false kills add up over the tests of a target. The plugin therefore runs each SPRT at $\alpha / T$ (Bonferroni, not Holm: a test cannot know what the others will find). T is the number of tests with the same `target` selected in this session: marked tests without `oracle_samples`, counted after `-k` and `--lf` deselection, so a filtered run has a smaller T. Under pytest-xdist each test counts once; with `--dist each` every worker runs every test again, so T is multiplied by the worker count. Skipped, failing and flaky-baseline tests still count, because the count is taken at selection: that is safe and costs some power. The `tests_per_target` field of the JSON report has T, the `INCONCLUSIVE` line of the terminal report names the split, and the `Calls:` fixed N uses the divided alpha. Scenario 3c measures it. The split fixes the growth with T: at $T = 12$ an unchanged mutant is killed in 22% of runs at a true rate of 0.90 without it and in 2.4% with it. It does not fix the noisy-baseline bias above: at 0.85 and 0.80 the corrected rate is still 8.9% and 17.4%, above 5%, because $p_0$ is estimated from 10 runs. The cost is power: for a drop of exactly $\delta$ from 0.90, KILLED falls from 66% at $T = 1$ to 44% at $T = 12$ and 32% at $T = 50$, and `INCONCLUSIVE` grows from 18% to 41% and 53%. `max_steps` stays at 20; raise it when a target has many tests. Scenario 3c models $T$ tests on one mutant; the many-mutants simulation below models $m$ mutants on one baseline, and the two multiply.
 - **Many mutants:** Each unchanged mutant can give a false kill. The expected number of false kills is approximately $m \cdot \alpha$ for $m$ mutants. Mutants of one test share the same baseline $p_0$, so their verdicts are correlated. In the simulation, the worst case is a true rate of 0.70: at least 1 false kill among 20 unchanged mutants has a probability of 89.1%. Independent mutants would give 98.5%.
 - **Mutation score interval:** The Wilson 95% interval of the Mutation Score (terminal, reports and `mutation_score_ci95`) treats the measured mutants as independent trials, which they are not (see Many mutants). The SPRT error rates are not in it.
 
@@ -130,7 +149,7 @@ The nominal $\alpha = 5\%$ and $\beta = 10\%$ hold only for a known $p_0$ (Scena
 
 Every run prints this comparison as the `Calls:` line (also in the Markdown summary, and as `calls` and `fixed_calls` in the JSON). `calls` sums the SPRT runs of every mutant evaluation, so a survivor counts once for each test that ran it. `fixed_calls` is the fixed N below, computed from the error rates and the $p_0$ of that run, summed over the same evaluations. The comparison is hypothetical: no fixed-N test is run. It leaves out baseline runs, which both approaches need, and the canary runs, and it includes `INCONCLUSIVE` mutants at $N_{\max}$. The line reads `no saving` when the SPRT used as many calls or more.
 
-A fixed-N test with the same error rates ($\alpha = 0.05$, $\beta = 0.10$) is the smallest binomial test that fails at most $\alpha$ of the time at $p_0$ and passes at most $\beta$ of the time at $p_1$. The script computes it and compares it with the SPRT's mean calls:
+A fixed-N test with the same error rates ($\alpha = 0.05 / T$, $\beta = 0.10$; the table is for $T = 1$) is the smallest binomial test that fails at most $\alpha$ of the time at $p_0$ and passes at most $\beta$ of the time at $p_1$. The script computes it and compares it with the SPRT's mean calls:
 
 | Scenario                     | Fixed N (KILLED if passes $\le c$) | SPRT ASN at $p_0$ / $p_1$ | Saved         | `INCONCLUSIVE` at $p_0$ / $p_1$ |
 | :--------------------------- | :--------------------------------- | :------------------------ | :------------ | :------------------------------ |

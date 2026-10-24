@@ -67,6 +67,16 @@ def test_run_mutation_kills_mutants_the_test_notices() -> None:
     assert state.killed_mutants == {e.mutant_id for e in executions}
 
 
+def test_alpha_is_divided_by_the_tests_of_the_target() -> None:
+    original = PROMPT
+    state = ClastogenPluginState(tests={TARGET: 12})
+
+    _, executions, _, _ = run_mutation(TEST_ID, lambda: original == PROMPT, _params(), PROMPT, state)
+
+    # A 10/10 baseline kills an always-failing mutant in 2 calls at alpha 0.05 and in 4 at 0.05 / 12.
+    assert {e.sample_count for e in executions} == {4}
+
+
 def test_run_mutation_reports_a_broken_baseline_for_every_mutant() -> None:
     _, executions, _, _ = run_mutation(TEST_ID, _raising(TrialError("boom")), _params(), PROMPT, ClastogenPluginState())
 

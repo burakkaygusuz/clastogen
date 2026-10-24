@@ -157,8 +157,17 @@ def _write_summary(
         )
     inconclusive = summary.counts[MutantStatus.INCONCLUSIVE]
     if inconclusive:
+        split = max(
+            (summary.tests.get(r.target, 1) for r in summary.results if r.status == MutantStatus.INCONCLUSIVE),
+            default=1,
+        )
+        hint = (
+            f" With {split} tests on one target, alpha is divided by {split}: that needs more runs."
+            if split > 1
+            else ""
+        )
         terminalreporter.write_line(
-            f"{inconclusive} inconclusive: no decision after max_steps runs. Increase max_steps or delta.",
+            f"{inconclusive} inconclusive: no decision after max_steps runs.{hint} Increase max_steps or delta.",
             yellow=True,
         )
 
