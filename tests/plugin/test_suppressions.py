@@ -27,7 +27,6 @@ def test_load_suppressions_toml_format(tmp_path: Path) -> None:
         [[suppressions]]
         mutant_id = "61886b971b7a"
         reason = "Model inherently adheres to constraint due to RLHF pretraining"
-        reviewed_by = "burak"
 
         [[suppressions]]
         mutant_id = "87a18f886222"
@@ -45,6 +44,8 @@ def test_load_suppressions_toml_format(tmp_path: Path) -> None:
         ("[[suppressions]]\nreason = 'x'\n", "missing 'mutant_id'"),
         ("[[suppressions]]\nmutant_id = 'abcdefabcdef'\n", "non-empty 'reason'"),
         ("[[suppressions]\n", "Cannot read"),
+        ("[[suppression]]\nmutant_id = 'abcdefabcdef'\nreason = 'x'\n", "Unknown top-level key.*suppression"),
+        ("[[suppressions]]\nmutant_id = 'abcdefabcdef'\nreason = 'x'\nreasn = 'y'\n", "Unknown key.*reasn"),
     ],
 )
 def test_load_suppressions_rejects_malformed_files(tmp_path: Path, text: str, match: str) -> None:

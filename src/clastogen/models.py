@@ -38,6 +38,7 @@ class RecordsPayload(TypedDict):
     unmutated: list[list[str]]
     oracle: list[dict[str, Any]]
     tests: dict[str, int]
+    targets: list[str]
 
 
 # Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
@@ -49,6 +50,24 @@ MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE
 NOISY_BASELINE_RATE = 0.90
 # Trials on an empty prompt after the mutants of a test that killed none: passing all of them means its survivors say nothing.
 CANARY_RUNS = 3
+
+
+CUSTOM_OPERATOR = "custom"
+
+
+def snippet_covers(original: str, sentence: str) -> bool:
+    """True when a custom mutant's original snippet equals or sits inside the prompt sentence."""
+    return original in sentence
+
+
+@dataclass(frozen=True)
+class CustomMutant:
+    """A hand- or agent-written mutant from .clastogen/mutants.toml; mutated "" deletes the snippet."""
+
+    target: str
+    original: str
+    mutated: str
+    description: str
 
 
 def _check_int(name: str, value: object, minimum: int) -> None:
@@ -263,6 +282,8 @@ class ClastogenPluginState:
     tests: dict[str, int] = field(default_factory=dict)
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
+    custom_mutants: tuple[CustomMutant, ...] = ()
+    measured_targets: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
     preview: list[RunPlan] = field(default_factory=list)
     budget: TrialBudget = field(default_factory=TrialBudget)

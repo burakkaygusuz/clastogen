@@ -40,7 +40,7 @@ The preview runs no test and no model call. `At most N test calls` counts the 3 
 ```python
 @pytest.mark.clastogen(
     target="my_app.agent:SYSTEM_PROMPT",  # Required: 'module:VAR' or 'module:Class.ATTR'
-    max_mutants=5,  # Maximum number of mutants (default: 5)
+    max_mutants=5,  # Maximum number of built-in mutants (default: 5); custom mutants are extra
     delta=0.30,  # Minimum pass-rate decrease to find (default: 0.30)
     p0=0.90,  # Known baseline pass rate (default: measured in 10 baseline runs; if you set it, Clastogen does not do these runs)
     max_steps=20,  # Maximum number of runs for each mutant (default: 20)
@@ -163,9 +163,30 @@ If the file is not correct, a `--clastogen` run stops with a usage error. Runs w
 
 An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mutants` or the tests you ran) is listed in a warning; the exit code does not change.
 
+## Custom mutants
+
+Rule discovery reads keywords and digits, so it misses rules written without them (for example "No drive-by refactors") and rules in other languages. Add your own mutants for them in `.clastogen/mutants.toml` in your pytest `rootdir`. You can write them by hand, or let your coding agent write them (see the Clastogen skill in `skills/clastogen/`); Clastogen itself calls no LLM, and the file is plain data, so a run stays deterministic.
+
+```toml
+[[mutants]]
+target = "app:SYSTEM_PROMPT"                           # the same target string as in the marker
+original = "Asla kişisel veriyi (TC, kart no) sorma"   # must occur verbatim in the prompt
+mutated = "Kişisel veriyi (TC, kart no) sorabilirsin"  # "" deletes the snippet
+description = "allows asking for personal data"
+```
+
+- Every field is required and must be a string; `mutated` may be empty. An unknown key, or an unknown top-level table such as `[[mutant]]`, is an error (the suppressions file is checked the same way).
+- `original` must occur exactly once in the prompt (also not once in an `<example>` block and once outside it); the prompt of the mutant is the prompt with that text replaced by `mutated`. Take a longer snippet if the text repeats.
+- `target` must be the same string as the `target` of the marker (for example `app:SYSTEM_PROMPT`). A target that no marker uses is not an error, only a warning in the terminal summary.
+- A custom mutant has the operator `custom`, and its ID hashes the target, the operator and both texts, so [suppressions](#suppress-mutants) work on it. It is measured like any mutant, by every marked test of its target, and it counts in the score.
+- `max_mutants` caps only the built-in mutants. Custom mutants are always added, so a marked test measures the custom mutants plus up to `max_mutants` built-in ones, and the call estimate of `--collect-only` includes them. If two mutants make the same prompt, only one is kept, and a custom mutant wins over a built-in one. `--clastogen-oracle` includes custom mutants too.
+- An entry whose `original` does not occur exactly once in the current prompt, or whose `mutated` equals `original`, stops the run with a usage error that names the entry. With pytest-xdist, every marked test of that target fails with the same message instead. If the text looks right, check the Unicode normalization (NFC) and the line endings of the file and of the prompt.
+- In the report, a sentence that contains a custom `original` is a rule with its own `k of n mutants killed` line, and it is not in `Unmutated sentences`. An `original` that spans two sentences, and a sentence inside an `<example>` block, credit no rule. A short `original` that is part of several sentences credits all of them.
+- A malformed file stops a `--clastogen` run with a usage error. Runs without `--clastogen` do not read it.
+
 ## Known limitations
 
-1. **Mutation operators:** Clastogen finds rules by their words, not by meaning. A sentence is a candidate if it has a keyword (`must`, `never`, `always`, `avoid`, `only`, `require`, `if`, `unless`, `at most`, `within`, `without`, `escalate`, `refuse`, `reject`, `decline`, `approve` and similar) or any digit. Role sentences ("You are a …") are not candidates. A rule with none of these, for example "Respond in the customer's language", is not mutated. The keywords are English, so in a prompt in another language only the sentences with a digit are candidates. These operators apply to each candidate; an operator that finds nothing to change in a rule gives no mutant:
+1. **Mutation operators:** Clastogen finds rules by their words, not by meaning. A sentence is a candidate if it has a keyword (`must`, `never`, `always`, `avoid`, `only`, `require`, `if`, `unless`, `at most`, `within`, `without`, `escalate`, `refuse`, `reject`, `decline`, `approve` and similar) or any digit. Role sentences ("You are a …") are not candidates. A rule with none of these, for example "Respond in the customer's language", is not mutated. The keywords are English, so in a prompt in another language only the sentences with a digit are candidates; write [custom mutants](#custom-mutants) for the rest. These operators apply to each candidate; an operator that finds nothing to change in a rule gives no mutant:
 
    | Operator                           | Change                                                                                                                                   |
    | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -178,7 +199,7 @@ An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mu
    | `weaken_modal`                     | a hard word becomes a soft word, for example "must" becomes "should"                                                                     |
    | `delete_section`, `delete_example` | removes a whole Markdown heading section (one that holds a rule) or an `<example>` block or "Examples" section, with its heading or tags |
 
-   Every rule and every block gets one mutant before any gets a second, in prompt order, and `max_mutants` caps the total; with more candidates than the budget, evenly spaced ones are used. Rules without a measured mutant (no mutant, or only `ERROR`, `SKIPPED` and `SUPPRESSED` ones) are listed as untested constraints. Deleting a whole section is often an easy kill, so read the score next to the per-operator rates. Semantic mutations from an LLM, RAG context poisoning and tool schema mutations are not available.
+   Every rule and every block gets one mutant before any gets a second, in prompt order, and `max_mutants` caps the total of built-in mutants; with more candidates than the budget, evenly spaced ones are used. Rules without a measured mutant (no mutant, or only `ERROR`, `SKIPPED` and `SUPPRESSED` ones) are listed as untested constraints. Deleting a whole section is often an easy kill, so read the score next to the per-operator rates. Clastogen does not generate semantic mutations itself; add them as [custom mutants](#custom-mutants). RAG context poisoning and tool schema mutations are not available.
 
 2. **Mutants that do not change behavior:** Sometimes a mutant does not change the behavior of the agent. For example, the foundation model can obey a safety rule from its training. Clastogen does not prove semantic equivalence. Write [probes](#probes-which-survivors-matter) to see which survivors change behavior, and use suppressions (`.clastogen/suppressions.toml`) for the mutants that do not. To judge a low score, read the `By operator` line (a score that comes only from `weaken_modal` misses is more likely equivalent mutants than one from `delete_constraint` misses) and the `Constraint Coverage` line (it counts the rules that at least one mutant killed; `survived` are rules that were measured but never killed, including `INCONCLUSIVE` ones; a rule without a measured mutant is `untested`, so set `max_mutants` at least as high as the number of rules when coverage matters. A killed `delete_section` mutant does not credit the rules inside the section). Under the line, the `Rules` rows (weakest first, the terminal shows 10 unless `-v`) give `k of n mutants killed` for each rule and the test that killed one (`killed_by`, the lowest test ID among the killers; a serial run skips a mutant a test already killed and a parallel run does not, so the name can differ between them). A mutant is killed if any test kills it, and `n` counts the mutants that were measured. The `Unmutated sentences` list the sentences that rule discovery skipped (no obligation word and no digit, outside `<example>` blocks); no rule-level operator made a mutant for them (a `delete_section` or `delete_example` mutant can still remove them), so read it to see whether a rule is written in a way the discovery cannot find. The same numbers are in the JSON as `by_operator`, `constraint_coverage` and `unmutated_sentences`.
 3. **Effect size:** The SPRT looks for an absolute decrease of `delta` (default 0.30) from a 10-run Laplace baseline. Thus, the maximum p0 is 11/12 ≈ 0.917. A small regression such as 0.95 → 0.88 needs approximately 60-70 runs for each mutant. With `max_steps=20`, the result is `INCONCLUSIVE` or `SURVIVED`. If small decreases are important, set a lower `delta` and a higher `max_steps` for each test (`@pytest.mark.clastogen(delta=0.10, max_steps=100)`). This increases the API cost.

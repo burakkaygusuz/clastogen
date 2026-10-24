@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import clastogen
+import clastogen.custom_mutants
 import clastogen.exceptions
 import clastogen.models
 import clastogen.mutation.injection
@@ -30,6 +31,7 @@ for mod in [
     clastogen.reporting.terminal,
     clastogen.mutation.structure,
     clastogen.suppressions,
+    clastogen.custom_mutants,
     clastogen.mutation.mutator,
     clastogen.stats.sprt,
     clastogen.mutation.injection,

@@ -3,12 +3,14 @@ from typing import Any
 
 from clastogen.models import (
     BEHAVIOR_ORDER,
+    CUSTOM_OPERATOR,
     Behavior,
     MutantExecution,
     MutantStatus,
     MutationSummary,
     OracleRecord,
     RuleCoverage,
+    snippet_covers,
 )
 from clastogen.stats.assertions import compute_wilson_interval
 
@@ -20,13 +22,19 @@ def _rule_coverage(
     unique: tuple[MutantExecution, ...], constraints: Iterable[tuple[str, str]]
 ) -> tuple[RuleCoverage, ...]:
     """Tallies the merged measured mutants of each rule; the rules sort by (target, text)."""
-    by_rule: dict[tuple[str, str], list[MutantExecution]] = {}
-    for r in unique:
-        if r.status in MEASURED:
-            by_rule.setdefault((r.target, r.original_snippet), []).append(r)
+    measured = [r for r in unique if r.status in MEASURED]
     rows = []
     for target, rule in sorted(set(constraints)):
-        mutants = by_rule.get((target, rule), [])
+        # A custom mutant counts for every rule its original snippet equals, sits inside or contains.
+        mutants = [
+            r
+            for r in measured
+            if r.target == target
+            and (
+                r.original_snippet == rule
+                or (r.operator_name == CUSTOM_OPERATOR and snippet_covers(r.original_snippet, rule))
+            )
+        ]
         killers = [r.test_id for r in mutants if r.status == MutantStatus.KILLED]
         rows.append(RuleCoverage(target, rule, len(killers), len(mutants), min(killers, default=None)))
     return tuple(rows)

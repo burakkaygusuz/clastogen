@@ -5,6 +5,7 @@ from collections import Counter
 import pytest
 
 from clastogen.models import (
+    CUSTOM_OPERATOR,
     MIN_BASELINE_RATE,
     NOISY_BASELINE_RATE,
     BaselineRecord,
@@ -12,6 +13,7 @@ from clastogen.models import (
     MutantStatus,
     MutationSummary,
     RunPlan,
+    snippet_covers,
 )
 from clastogen.reporting.render import STATUS_LABELS, kill_hint
 from clastogen.reporting.scoring import (
@@ -128,7 +130,15 @@ def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSum
         _write_capped(
             terminalreporter, [f"{rule_line(r)}  {_clip(r.rule, 60)}" for r in weakest_first(summary.rules)], verbose
         )
-        if summary.untested:
+        # A rule whose only mutant is a suppressed custom one is untested by choice, so max_mutants would not help.
+        suppressed = [
+            r for r in summary.results if r.operator_name == CUSTOM_OPERATOR and r.status == MutantStatus.SUPPRESSED
+        ]
+        if any(
+            not any(s.target == r.target and snippet_covers(s.original_snippet, r.rule) for s in suppressed)
+            for r in summary.rules
+            if r.status == "untested"
+        ):
             terminalreporter.write_line("    Untested: raise max_mutants, fix errors or add tests.", light=True)
     if summary.unmutated:
         terminalreporter.write_line(
@@ -233,4 +243,10 @@ def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState
     if unused and state.marked_tests_count > 0:
         terminalreporter.write_line(
             f"Suppressions matching no mutant in this run: {', '.join(unused)} (stale ID, or filtered out)", yellow=True
+        )
+    unused_targets = sorted({c.target for c in state.custom_mutants} - state.measured_targets)
+    if unused_targets and state.marked_tests_count > 0:
+        terminalreporter.write_line(
+            f"Custom mutants for targets no test measured in this run: {', '.join(unused_targets)} (no marked test, or filtered out)",
+            yellow=True,
         )

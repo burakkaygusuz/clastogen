@@ -10,6 +10,7 @@ A content-addressed, defective variant of an agent prompt.
 
 - **Identifier (`id`)**: 12-character SHA-256 hash computed deterministically from `(target_symbol, operator_name, original_snippet, mutated_snippet)`.
 - **Invariance**: An identical modification to the same target always yields the exact same `Mutant.id`, enabling cross-test deduplication and persistent suppression tracking (`.clastogen/suppressions.toml`).
+- **Custom mutant**: a mutant written in `.clastogen/mutants.toml` (operator `custom`) instead of found by rule discovery; it is never cut by `max_mutants`, and Clastogen itself calls no LLM to make it.
 
 ### 2. Sequential Probability Ratio Test (SPRT)
 

@@ -12,6 +12,7 @@ from clastogen.models import (
     Behavior,
     ClastogenParams,
     ClastogenPluginState,
+    CustomMutant,
     Mutant,
     MutantExecution,
     MutantStatus,
@@ -145,7 +146,12 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
 
 
 def plan_test(
-    test_id: str, params: ClastogenParams, prompt_text: str, suppressed: set[str], with_oracle: bool
+    test_id: str,
+    params: ClastogenParams,
+    prompt_text: str,
+    suppressed: set[str],
+    with_oracle: bool,
+    custom: Sequence[CustomMutant],
 ) -> RunPlan:
     """Worst case of a marked test, from the mutants run_mutation or run_oracle would generate, without running them.
 
@@ -154,7 +160,7 @@ def plan_test(
     prompt and on each mutant. The original test call is not counted, and a kill by an earlier test can only lower
     these numbers.
     """
-    mutator = PromptMutator(target_symbol=params.target)
+    mutator = PromptMutator(params.target, custom)
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     suppressed_count = sum(m.id in suppressed for m in mutants)
     pending = len(mutants) - suppressed_count
@@ -226,7 +232,7 @@ def run_mutation(
     """
     # Bonferroni: an unchanged mutant faces every test of the target, and any one kill counts, so each SPRT gets alpha / T.
     params = replace(params, alpha=params.alpha / state.tests.get(params.target, 1))
-    mutator = PromptMutator(target_symbol=params.target)
+    mutator = PromptMutator(params.target, state.custom_mutants)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
     unmutated = [[params.target, s] for s in mutator.extract_unmatched_sentences(prompt_text)]
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
@@ -273,13 +279,14 @@ def run_oracle(
     prompt_text: str,
     suppressed: set[str],
     budget: TrialBudget,
+    custom: Sequence[CustomMutant],
 ) -> list[OracleRecord]:
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
     Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
     a probe never lowers a label. A drop the test is too weak to call is suspected, not unchanged.
     """
-    mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
+    mutants = PromptMutator(params.target, custom).generate_mutants(prompt_text, params.max_mutants)
     mutants = [m for m in mutants if m.id not in suppressed]
     if not mutants:
         return []
@@ -326,6 +333,7 @@ def to_payload(
     unmutated: Sequence[list[str]] = (),
     oracle: Sequence[OracleRecord] = (),
     tests: dict[str, int] | None = None,
+    targets: Sequence[str] = (),
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
@@ -335,4 +343,5 @@ def to_payload(
         "unmutated": list(unmutated),
         "oracle": [asdict(o) for o in oracle],
         "tests": tests or {},
+        "targets": list(targets),
     }
