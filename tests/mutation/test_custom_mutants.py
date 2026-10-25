@@ -171,3 +171,24 @@ def test_snippet_pairs_that_concatenate_to_the_same_text_get_different_ids() -> 
     )
     assert deleted != literal
     assert len({make("a", "b"), make("a:b", ""), make("a", "b:")}) == 3
+
+
+@pytest.mark.parametrize(
+    ("original", "credited"),
+    [
+        ("Kibar ol ve nazik konuş.", True),
+        ("Kibar ol ve nazik konuş!", True),
+        ("  Kibar ol ve nazik konuş. ", True),
+        ("Kibar ol ve nazik konuş", True),
+        (".", False),
+        ("Kibar ol ve nazik konuş.\nCevaplar kısa olsun.", False),
+    ],
+)
+def test_a_trailing_sentence_punctuation_in_the_original_still_covers_the_sentence(
+    original: str, credited: bool
+) -> None:
+    mutator = PromptMutator("T", [CustomMutant("T", original, "Kaba ol", "d")])
+
+    unmatched = mutator.extract_unmatched_sentences(TURKISH)
+
+    assert ("Kibar ol ve nazik konuş" in unmatched) is not credited

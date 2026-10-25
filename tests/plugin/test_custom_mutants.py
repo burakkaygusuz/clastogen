@@ -274,3 +274,30 @@ def test_a_suppressed_custom_mutant_does_not_suggest_raising_max_mutants(pyteste
 
     assert "untested: no measured mutant" in out
     assert "raise max_mutants" not in out
+
+
+def test_a_period_terminated_original_credits_its_sentence_end_to_end(
+    pytester: pytest.Pytester, subprocess_env: None
+) -> None:
+    pytester.makepyfile(agent=TURKISH_AGENT, test_a=TURKISH_TEST)
+    _write(pytester.path, ENTRY.replace('sorma"', 'sorma."'))
+    out = pytester.path / "r.json"
+
+    result = pytester.runpytest_subprocess("--clastogen", f"--clastogen-json={out}")
+
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
+    data = json.loads(out.read_text(encoding="utf-8"))
+    (rule,) = data["constraint_coverage"]["rules"]
+    assert (rule["rule"], rule["status"]) == ("Asla kişisel veriyi (TC, kart no) sorma", "killed")
+    assert "Asla kişisel veriyi (TC, kart no) sorma" not in {u["sentence"] for u in data["unmutated_sentences"]}
+    assert "match no single sentence" not in result.stdout.str()
+
+
+def test_a_multi_sentence_original_is_named_in_the_terminal_report(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=TURKISH_AGENT, test_a=TURKISH_TEST)
+    span = "Asla kişisel veriyi (TC, kart no) sorma.\nKibar ol ve nazik konuş."
+    _write(pytester.path, ENTRY.replace("Asla kişisel veriyi (TC, kart no) sorma", span.replace("\n", "\\n")))
+
+    out = pytester.runpytest("--clastogen").stdout.str()
+
+    assert "match no single sentence (they run, but credit no rule): allows asking for personal data" in out

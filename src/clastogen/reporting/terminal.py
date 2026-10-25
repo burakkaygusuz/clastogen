@@ -140,6 +140,19 @@ def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSum
             if r.status == "untested"
         ):
             terminalreporter.write_line("    Untested: raise max_mutants, fix errors or add tests.", light=True)
+    stray = sorted(
+        {
+            r.description
+            for r in summary.results
+            if r.operator_name == CUSTOM_OPERATOR
+            and not any(x.target == r.target and snippet_covers(r.original_snippet, x.rule) for x in summary.rules)
+        }
+    )
+    if stray:
+        terminalreporter.write_line(
+            f"Custom mutants that match no single sentence (they run, but credit no rule): {'; '.join(stray)}",
+            yellow=True,
+        )
     if summary.unmutated:
         terminalreporter.write_line(
             "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):", yellow=True
