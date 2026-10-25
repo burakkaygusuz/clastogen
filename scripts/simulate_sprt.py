@@ -140,13 +140,15 @@ def run_test_family_simulation(
     unlike family_size above, which is many mutants on one baseline.
     """
     rng = random.Random(seed)
+
+    def passes() -> bool:
+        return rng.random() < baseline_p  # NOSONAR
+
     killed = 0
     for _ in range(trials):
         for _ in range(tests):
             config = _baseline_config(rng, baseline_p, delta, 20, alpha)
-            if (
-                config and SPRT(config).run_evaluator(lambda: rng.random() < baseline_p).decision == Decision.KILLED
-            ):  # NOSONAR
+            if config and SPRT(config).run_evaluator(passes).decision == Decision.KILLED:
                 killed += 1
                 break
     return killed / trials * 100.0
