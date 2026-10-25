@@ -7,6 +7,7 @@ patch both libraries.
 from __future__ import annotations
 
 import json
+from types import ModuleType
 from typing import Any
 
 import anthropic
@@ -37,21 +38,21 @@ MESSAGES_REPLY = {
 }
 
 
-def _transport(reply: dict[str, Any], seen: list[dict[str, Any]], http: Any = httpx) -> Any:  # noqa: ANN401
-    def handler(request: Any) -> Any:  # noqa: ANN401
+def _transport(reply: dict[str, Any], seen: list[dict[str, Any]], http: ModuleType = httpx) -> Any:  # noqa: ANN401
+    def handler(request: httpx.Request) -> httpx.Response:
         seen.append(json.loads(request.content))
         return http.Response(200, json=reply)
 
     return http.MockTransport(handler)
 
 
-def _openai_call(client: Any) -> None:  # noqa: ANN401
+def _openai_call(client: openai.OpenAI) -> None:
     client.chat.completions.create(
         model="m", messages=[{"role": "system", "content": ORIGINAL}, {"role": "user", "content": ORIGINAL}]
     )
 
 
-def _anthropic_call(client: Any) -> None:  # noqa: ANN401
+def _anthropic_call(client: anthropic.Anthropic) -> None:
     client.messages.create(model="m", max_tokens=8, system=ORIGINAL, messages=[{"role": "user", "content": ORIGINAL}])
 
 

@@ -59,7 +59,7 @@ def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Req
     if request.headers.get("authorization", "").startswith(_SIGV4):
         return request  # the signature covers the body, so a rewritten body would be rejected
     try:
-        body = json.loads(request.content)  # RequestNotRead for a streamed body
+        body = json.loads(request.content)
     except (ValueError, RuntimeError):  # bad JSON, or RequestNotRead (a RuntimeError)
         return request
     if not isinstance(body, dict):
@@ -76,10 +76,10 @@ def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Req
 def _patch_send(http: ModuleType, original: str, mutated: str) -> Generator[None, None, None]:
     send, async_send = http.Client.send, http.AsyncClient.send
 
-    def patched_send(self: Any, request: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+    def patched_send(self: httpx.Client, request: httpx.Request, **kwargs: object) -> httpx.Response:
         return send(self, _rewritten(request, original, mutated), **kwargs)
 
-    async def patched_async_send(self: Any, request: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+    async def patched_async_send(self: httpx.AsyncClient, request: httpx.Request, **kwargs: object) -> httpx.Response:
         return await async_send(self, _rewritten(request, original, mutated), **kwargs)
 
     with patch.object(http.Client, "send", patched_send), patch.object(http.AsyncClient, "send", patched_async_send):

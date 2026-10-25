@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any
 
 import httpx
 import pytest
@@ -21,9 +22,9 @@ def _client() -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(_echo))
 
 
-def _sent(body: dict, **kwargs: object) -> dict:
+def _sent(body: Mapping[str, object], headers: dict[str, str] | None = None) -> dict[str, Any]:
     with _client() as client:
-        return client.post("http://llm/v1", json=body, **kwargs).json()  # ty: ignore[invalid-argument-type]
+        return client.post("http://llm/v1", json=body, headers=headers).json()
 
 
 OPENAI = {"messages": [{"role": "system", "content": f"{ORIGINAL} Be kind."}, {"role": "user", "content": ORIGINAL}]}
@@ -77,7 +78,7 @@ def test_a_streamed_body_passes_through() -> None:
 
 def test_a_signed_request_is_skipped() -> None:
     with rewrite_requests(ORIGINAL, MUTATED):
-        sent = _sent(OPENAI, headers={"Authorization": "AWS4-HMAC-SHA256 Credential=x"})
+        sent = _sent(OPENAI, {"Authorization": "AWS4-HMAC-SHA256 Credential=x"})
     assert json.loads(sent["body"]) == OPENAI
 
 

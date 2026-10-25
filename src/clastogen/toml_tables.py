@@ -1,11 +1,10 @@
 import tomllib
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 
-def read_toml_tables(path: Path, key: str, fields: tuple[str, ...]) -> list[dict[str, Any]]:
+def read_toml_tables(path: Path, key: str, fields: tuple[str, ...]) -> list[dict[str, object]]:
     """Reads the [[key]] tables of a TOML file; [] when the file is missing.
 
     Raises pytest.UsageError for an unreadable file, a top-level key other than key, a key that is not a list of
