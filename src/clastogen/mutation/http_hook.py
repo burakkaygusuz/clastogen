@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 if TYPE_CHECKING:
     import httpx
 
+# httpx2 is the library of the Anthropic SDK 2.x; a client of one library is rejected by an SDK built on the other.
+_HTTP_LIBRARIES = ("httpx", "httpx2")
 _SYSTEM_ROLES = ("system", "developer")
 _SIGV4 = "AWS4-HMAC-SHA256"
 
@@ -57,28 +61,35 @@ def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Req
 
 
 @contextmanager
+def _patch_send(http: ModuleType, original: str, mutated: str) -> Generator[None, None, None]:
+    send, async_send = http.Client.send, http.AsyncClient.send
+
+    def patched_send(self: Any, request: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        return send(self, _rewritten(request, original, mutated), **kwargs)
+
+    async def patched_async_send(self: Any, request: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        return await async_send(self, _rewritten(request, original, mutated), **kwargs)
+
+    with patch.object(http.Client, "send", patched_send), patch.object(http.AsyncClient, "send", patched_async_send):
+        yield
+
+
+@contextmanager
 def rewrite_requests(original: object, mutated: str) -> Generator[None, None, None]:
     """Rewrites the original prompt text in the system positions of every httpx request sent inside the context.
 
     This reaches prompts that a module attribute cannot: copies made at import time and prompts held inside an SDK
-    object. It is a no-op when httpx is not installed, and when there is no original text.
+    object. It patches every HTTP library of _HTTP_LIBRARIES that is installed, because an SDK accepts only the
+    client class of its own library. It is a no-op when none is installed, and when there is no original text.
     """
     if not isinstance(original, str) or original == "":
         yield
         return
-    try:
-        import httpx
-    except ImportError:
-        yield
-        return
-
-    send, async_send = httpx.Client.send, httpx.AsyncClient.send
-
-    def patched_send(self: httpx.Client, request: httpx.Request, **kwargs: Any) -> httpx.Response:  # noqa: ANN401
-        return send(self, _rewritten(request, original, mutated), **kwargs)
-
-    async def patched_async_send(self: httpx.AsyncClient, request: httpx.Request, **kwargs: Any) -> httpx.Response:  # noqa: ANN401
-        return await async_send(self, _rewritten(request, original, mutated), **kwargs)
-
-    with patch.object(httpx.Client, "send", patched_send), patch.object(httpx.AsyncClient, "send", patched_async_send):
+    with ExitStack() as stack:
+        for name in _HTTP_LIBRARIES:
+            try:
+                http = importlib.import_module(name)
+            except ImportError:
+                continue
+            stack.enter_context(_patch_send(http, original, mutated))
         yield
