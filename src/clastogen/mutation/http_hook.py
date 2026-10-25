@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 # httpx2 is the library of the Anthropic SDK 2.x; a client of one library is rejected by an SDK built on the other.
 _HTTP_LIBRARIES = ("httpx", "httpx2")
 _SYSTEM_ROLES = ("system", "developer")
+_SYSTEM_FIELDS = ("system", "instructions", "preamble")  # Anthropic and Bedrock, OpenAI Responses, Cohere v1
+_MESSAGE_LISTS = ("messages", "input")  # Chat Completions and Anthropic, Responses
 _SIGV4 = "AWS4-HMAC-SHA256"
 
 
@@ -37,6 +39,21 @@ def _replace_text(content: object, original: str, mutated: str) -> object:
     return content
 
 
+def _rewritten_body(body: dict[str, Any], original: str, mutated: str) -> dict[str, Any]:
+    """Returns a copy of a request body with original replaced in its system positions."""
+    new = copy.deepcopy(body)
+    for field in _SYSTEM_FIELDS:
+        if field in new:
+            new[field] = _replace_text(new[field], original, mutated)
+    if isinstance(gemini := new.get("systemInstruction"), dict) and "parts" in gemini:
+        gemini["parts"] = _replace_text(gemini["parts"], original, mutated)
+    for key in _MESSAGE_LISTS:
+        for message in new[key] if isinstance(new.get(key), list) else []:
+            if isinstance(message, dict) and message.get("role") in _SYSTEM_ROLES:
+                message["content"] = _replace_text(message.get("content"), original, mutated)
+    return new
+
+
 def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Request:
     """Returns request with original replaced in its system positions, or request itself when nothing changes."""
     if request.headers.get("authorization", "").startswith(_SIGV4):
@@ -47,12 +64,7 @@ def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Req
         return request
     if not isinstance(body, dict):
         return request
-    new = copy.deepcopy(body)
-    if "system" in new:  # Anthropic
-        new["system"] = _replace_text(new["system"], original, mutated)
-    for message in messages if isinstance(messages := new.get("messages"), list) else []:  # OpenAI
-        if isinstance(message, dict) and message.get("role") in _SYSTEM_ROLES:
-            message["content"] = _replace_text(message.get("content"), original, mutated)
+    new = _rewritten_body(body, original, mutated)
     if new == body:
         return request
     headers = [(k, v) for k, v in request.headers.multi_items() if k.lower() != "content-length"]

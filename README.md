@@ -86,7 +86,7 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
    pytest --clastogen
    ```
 
-> **Important:** Clastogen replaces the prompt attribute at call time, and, for httpx- or httpx2-based SDKs (OpenAI, Anthropic; unsigned requests, except streamed request bodies), also rewrites the prompt text in the outgoing request. With any other client, if your code copies the prompt at import time, the survivors become `ERROR` (the canary). See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
+> **Important:** Clastogen replaces the prompt attribute at call time, and, for httpx- or httpx2-based SDKs (tested with OpenAI and Anthropic; unsigned requests, except streamed request bodies), also rewrites the prompt text in the outgoing request. With any other client, if your code copies the prompt at import time, the survivors become `ERROR` (the canary). See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
 
 ---
 

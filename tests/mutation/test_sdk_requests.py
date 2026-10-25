@@ -104,3 +104,38 @@ def test_openai_client_on_plain_httpx_still_works() -> None:
     with rewrite_requests(ORIGINAL, MUTATED):
         _openai_call(client)
     assert seen[0]["messages"][0]["content"] == MUTATED
+
+
+def test_openai_responses_api_sends_the_mutated_instructions_and_developer_input() -> None:
+    seen: list[dict[str, Any]] = []
+    reply = {"id": "r", "object": "response", "created_at": 0, "model": "m", "output": [], "parallel_tool_calls": True}
+    reply |= {"tool_choice": "auto", "tools": [], "status": "completed"}
+    client = openai.OpenAI(api_key="k", http_client=httpx2.Client(transport=_transport(reply, seen, httpx2)))
+    with rewrite_requests(ORIGINAL, MUTATED):
+        client.responses.create(
+            model="m",
+            instructions=ORIGINAL,
+            input=[{"role": "developer", "content": ORIGINAL}, {"role": "user", "content": ORIGINAL}],
+        )
+    assert seen[0]["instructions"] == MUTATED
+    assert [m["content"] for m in seen[0]["input"]] == [MUTATED, ORIGINAL]
+
+
+def test_gemini_and_cohere_bodies_get_the_mutated_prompt() -> None:
+    seen: list[dict[str, Any]] = []
+    client = httpx.Client(transport=_transport({}, seen))
+    gemini = {"systemInstruction": {"parts": [{"text": ORIGINAL}]}, "contents": [{"parts": [{"text": ORIGINAL}]}]}
+    with rewrite_requests(ORIGINAL, MUTATED):
+        client.post("http://x/gemini", json=gemini)
+        client.post("http://x/cohere", json={"preamble": ORIGINAL, "message": ORIGINAL})
+    assert seen[0]["systemInstruction"]["parts"][0]["text"] == MUTATED
+    assert seen[0]["contents"][0]["parts"][0]["text"] == ORIGINAL
+    assert seen[1] == {"preamble": MUTATED, "message": ORIGINAL}
+
+
+def test_gemini_body_without_parts_is_sent_unchanged() -> None:
+    seen: list[dict[str, Any]] = []
+    body = {"systemInstruction": {"role": "system"}, "contents": []}
+    with rewrite_requests(ORIGINAL, MUTATED):
+        httpx.Client(transport=_transport({}, seen)).post("http://x/gemini", json=body)
+    assert seen[0] == body
