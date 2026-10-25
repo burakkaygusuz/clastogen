@@ -234,7 +234,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     state = config.stash[STATE_KEY]
     # Probes get no SPRT verdict, so they are not part of the family. Every worker collects every selected test,
     # so each counts the whole family; with --dist each a worker runs all of them again, so the family grows by the
-    # worker count (the controller says so in workerinput). A bad marker is reported when the test runs, not here.
+    # worker count (the controller says so in workerinput).
     repeats = getattr(config, "workerinput", {}).get("clastogen_repeats", 1)
     for item in session.items:
         if marker := item.get_closest_marker("clastogen"):

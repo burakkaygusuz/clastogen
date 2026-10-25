@@ -20,7 +20,7 @@ def _gen(prompt: str, custom: list[CustomMutant], max_mutants: int = 5) -> list[
 
 
 def test_a_prompt_without_builtin_matches_still_gets_a_custom_mutant() -> None:
-    assert PromptMutator("T").generate_mutants(TURKISH, 5) == []
+    assert not PromptMutator("T").generate_mutants(TURKISH, 5)
 
     (mutant,) = _gen(TURKISH, [PERSONAL])
 
@@ -82,8 +82,9 @@ def test_the_id_is_stable_and_hashes_the_texts() -> None:
     ],
 )
 def test_a_stale_or_identical_entry_raises_naming_it(original: str, mutated: str, match: str) -> None:
+    entry = CustomMutant("T", original, mutated, "d")
     with pytest.raises(ValueError, match=match) as err:
-        _gen(TURKISH, [CustomMutant("T", original, mutated, "d")])
+        _gen(TURKISH, [entry])
     assert original in str(err.value)
 
 
@@ -96,7 +97,6 @@ def test_a_covered_sentence_leaves_the_unmutated_list_and_becomes_a_rule() -> No
     assert sentence not in covered.extract_unmatched_sentences(TURKISH)
     assert sentence in covered.extract_candidate_rules(TURKISH)
     assert plain.extract_candidate_rules(TURKISH) == []
-    # A snippet inside a sentence covers that sentence too.
     inside = PromptMutator("T", [CustomMutant("T", "nazik konuş", "sert konuş", "d")])
     assert "Kibar ol ve nazik konuş" not in inside.extract_unmatched_sentences(TURKISH)
 
@@ -123,10 +123,12 @@ def test_an_original_that_does_not_occur_exactly_once_raises() -> None:
     in_example = "Kibar ol ve nazik konuş.\n<example>Kibar ol ve nazik konuş.</example>"
 
     for prompt, original in ((twice, "ibar ol"), (in_example, "nazik konuş"), (twice, "ol")):
+        entry = CustomMutant("T", original, "x", "d")
         with pytest.raises(ValueError, match=r"exactly once.*found 2"):
-            _gen(prompt, [CustomMutant("T", original, "x", "d")])
+            _gen(prompt, [entry])
+    missing = CustomMutant("T", "kaba ol", "x", "d")
     with pytest.raises(ValueError, match=r"found 0.*NFC"):
-        _gen(twice, [CustomMutant("T", "kaba ol", "x", "d")])
+        _gen(twice, [missing])
 
 
 def test_a_custom_mutant_equal_to_another_makes_one_mutant_and_beats_a_builtin() -> None:

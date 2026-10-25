@@ -192,7 +192,9 @@ class RuleCoverage:
 
     @property
     def status(self) -> Literal["killed", "survived", "untested"]:
-        return "killed" if self.killed else "survived" if self.mutants else "untested"
+        if self.killed:
+            return "killed"
+        return "survived" if self.mutants else "untested"
 
 
 @dataclass(frozen=True)
