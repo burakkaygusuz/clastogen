@@ -71,7 +71,8 @@ def test_the_id_is_stable_and_hashes_the_texts() -> None:
     b = _gen(TURKISH, [PERSONAL])[0]
     c = _gen(TURKISH, [CustomMutant("T", PERSONAL.original, "Kişisel veriyi sor", "x")])[0]
 
-    assert a.id == b.id != c.id
+    assert a.id == b.id
+    assert c.id != b.id
 
 
 @pytest.mark.parametrize(
@@ -151,7 +152,8 @@ def test_rule_coverage_credits_a_snippet_inside_a_sentence_but_not_one_spanning_
         )
 
         row = next(r for r in summary.rules if r.rule == "Kibar ol ve nazik konuş")
-        assert (row.killed, row.mutants) == ((1, 1) if credited else (0, 0))
+        assert row.killed == int(credited)
+        assert row.mutants == int(credited)
         assert ("Kibar ol ve nazik konuş" in mutator.extract_unmatched_sentences(TURKISH)) is not credited
 
 
