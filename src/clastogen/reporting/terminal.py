@@ -5,6 +5,7 @@ from collections import Counter
 import pytest
 
 from clastogen.models import (
+    CUSTOM_OPERATOR,
     MIN_BASELINE_RATE,
     NOISY_BASELINE_RATE,
     BaselineRecord,
@@ -12,20 +13,24 @@ from clastogen.models import (
     MutantStatus,
     MutationSummary,
     RunPlan,
+    snippet_covers,
 )
 from clastogen.reporting.render import STATUS_LABELS, kill_hint
 from clastogen.reporting.scoring import (
+    MERGE_NOTE,
     behavior_label,
     below_threshold,
     calls_line,
     coverage_line,
     exposure_line,
     operator_line,
+    rule_line,
     score_line,
     survivor_tests,
+    weakest_first,
 )
 
-_UNTESTED_SHOWN = 10
+_SHOWN = 10
 
 _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
     MutantStatus.SURVIVED: {"red": True, "bold": True},
@@ -107,18 +112,52 @@ def _write_mutants(
             terminalreporter.write_line(f"    Assert: {hint}", light=True)
 
 
-def _write_untested(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, verbose: bool) -> None:
-    if summary.untested:
-        shown = summary.untested if verbose else summary.untested[:_UNTESTED_SHOWN]
-        terminalreporter.write_line(
-            "Untested constraints (no measured mutant: raise max_mutants, fix errors or add tests):", yellow=True
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _write_capped(terminalreporter: pytest.TerminalReporter, lines: list[str], verbose: bool) -> None:
+    shown = lines if verbose else lines[:_SHOWN]
+    for line in shown:
+        terminalreporter.write_line(f"    {line}", light=True)
+    if len(shown) < len(lines):
+        terminalreporter.write_line(f"    … and {len(lines) - len(shown)} more (-v shows all)", light=True)
+
+
+def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSummary, verbose: bool) -> None:
+    if summary.rules:
+        terminalreporter.write_line(f"Rules, weakest first ({MERGE_NOTE})", yellow=True)
+        _write_capped(
+            terminalreporter, [f"{rule_line(r)}  {_clip(r.rule, 60)}" for r in weakest_first(summary.rules)], verbose
         )
-        for rule in shown:
-            terminalreporter.write_line(f"    {rule if len(rule) <= 100 else rule[:99] + '…'}", light=True)
-        if len(shown) < len(summary.untested):
-            terminalreporter.write_line(
-                f"    … and {len(summary.untested) - len(shown)} more (-v shows all)", light=True
-            )
+        # A rule whose only mutant is a suppressed custom one is untested by choice, so max_mutants would not help.
+        suppressed = [
+            r for r in summary.results if r.operator_name == CUSTOM_OPERATOR and r.status == MutantStatus.SUPPRESSED
+        ]
+        if any(
+            not any(s.target == r.target and snippet_covers(s.original_snippet, r.rule) for s in suppressed)
+            for r in summary.rules
+            if r.status == "untested"
+        ):
+            terminalreporter.write_line("    Untested: raise max_mutants, fix errors or add tests.", light=True)
+    stray = sorted(
+        {
+            r.description
+            for r in summary.results
+            if r.operator_name == CUSTOM_OPERATOR
+            and not any(x.target == r.target and snippet_covers(r.original_snippet, x.rule) for x in summary.rules)
+        }
+    )
+    if stray:
+        terminalreporter.write_line(
+            f"Custom mutants that match no single sentence (they run, but credit no rule): {'; '.join(stray)}",
+            yellow=True,
+        )
+    if summary.unmutated:
+        terminalreporter.write_line(
+            "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):", yellow=True
+        )
+        _write_capped(terminalreporter, [_clip(sentence, 100) for _, sentence in summary.unmutated], verbose)
 
 
 def _write_summary(
@@ -141,8 +180,17 @@ def _write_summary(
         )
     inconclusive = summary.counts[MutantStatus.INCONCLUSIVE]
     if inconclusive:
+        split = max(
+            (summary.tests.get(r.target, 1) for r in summary.results if r.status == MutantStatus.INCONCLUSIVE),
+            default=1,
+        )
+        hint = (
+            f" With {split} tests on one target, alpha is divided by {split}: that needs more runs."
+            if split > 1
+            else ""
+        )
         terminalreporter.write_line(
-            f"{inconclusive} inconclusive: no decision after max_steps runs. Increase max_steps or delta.",
+            f"{inconclusive} inconclusive: no decision after max_steps runs.{hint} Increase max_steps or delta.",
             yellow=True,
         )
 
@@ -160,7 +208,7 @@ def _write_summary(
         terminalreporter.write_line(line, light=True)
     if line := coverage_line(summary):
         terminalreporter.write_line(line, bold=True)
-    _write_untested(terminalreporter, summary, verbose)
+    _write_rules(terminalreporter, summary, verbose)
 
 
 def write_preview(terminalreporter: pytest.TerminalReporter, plans: list[RunPlan]) -> None:
@@ -208,4 +256,10 @@ def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState
     if unused and state.marked_tests_count > 0:
         terminalreporter.write_line(
             f"Suppressions matching no mutant in this run: {', '.join(unused)} (stale ID, or filtered out)", yellow=True
+        )
+    unused_targets = sorted({c.target for c in state.custom_mutants} - state.measured_targets)
+    if unused_targets and state.marked_tests_count > 0:
+        terminalreporter.write_line(
+            f"Custom mutants for targets no test measured in this run: {', '.join(unused_targets)} (no marked test, or filtered out)",
+            yellow=True,
         )

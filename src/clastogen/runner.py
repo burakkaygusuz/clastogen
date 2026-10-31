@@ -12,6 +12,7 @@ from clastogen.models import (
     Behavior,
     ClastogenParams,
     ClastogenPluginState,
+    CustomMutant,
     Mutant,
     MutantExecution,
     MutantStatus,
@@ -21,7 +22,8 @@ from clastogen.models import (
     SPRTConfig,
     TrialBudget,
 )
-from clastogen.mutation.injection import override_prompt
+from clastogen.mutation.http_hook import rewrite_requests
+from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
@@ -106,8 +108,9 @@ def _execution(
 
 
 def _inject(stack: ExitStack, target: str, prompt: str) -> None:
-    """Patches the prompt in for the life of stack; an injection failure becomes a TrialError."""
+    """Patches the prompt in for the life of stack, as an attribute and in httpx requests; a failure becomes a TrialError."""
     try:
+        stack.enter_context(rewrite_requests(getattr(*resolve_target(target)), prompt))
         stack.enter_context(override_prompt(target, prompt))
     except Exception as exc:
         raise TrialError(f"prompt injection failed: {type(exc).__name__}") from exc
@@ -143,7 +146,12 @@ def _evaluate_mutant(test_id: str, trial: Callable[[], bool], mutant: Mutant, sp
 
 
 def plan_test(
-    test_id: str, params: ClastogenParams, prompt_text: str, suppressed: set[str], with_oracle: bool
+    test_id: str,
+    params: ClastogenParams,
+    prompt_text: str,
+    suppressed: set[str],
+    with_oracle: bool,
+    custom: Sequence[CustomMutant],
 ) -> RunPlan:
     """Worst case of a marked test, from the mutants run_mutation or run_oracle would generate, without running them.
 
@@ -152,7 +160,7 @@ def plan_test(
     prompt and on each mutant. The original test call is not counted, and a kill by an earlier test can only lower
     these numbers.
     """
-    mutator = PromptMutator(target_symbol=params.target)
+    mutator = PromptMutator(params.target, custom)
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     suppressed_count = sum(m.id in suppressed for m in mutants)
     pending = len(mutants) - suppressed_count
@@ -215,33 +223,37 @@ def _baseline_rejected(test_id: str, mutants: Sequence[Mutant], error: str | Non
 
 def run_mutation(
     test_id: str, trial: Callable[[], bool], params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
-) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]]]:
+) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]], list[list[str]]]:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
-    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints),
-    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them.
+    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints, unmutated),
+    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them and
+    unmutated are the [target, sentence] pairs that rule discovery skipped.
     """
-    mutator = PromptMutator(target_symbol=params.target)
+    # Bonferroni: an unchanged mutant faces every test of the target, and any one kill counts, so each SPRT gets alpha / T.
+    params = replace(params, alpha=params.alpha / state.tests.get(params.target, 1))
+    mutator = PromptMutator(params.target, state.custom_mutants)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
+    unmutated = [[params.target, s] for s in mutator.extract_unmatched_sentences(prompt_text)]
     mutants = mutator.generate_mutants(prompt_text, max_mutants=params.max_mutants)
     mutants = [m for m in mutants if m.id not in state.killed_mutants]
 
     executions = [_execution(test_id, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
     pending = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not pending:
-        return [], executions, constraints
+        return [], executions, constraints, unmutated
 
     # The test starts only when at least one mutant can be funded after it.
     if not state.budget.fits(_baseline_calls(params) + params.max_steps):
         unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
-        return [], executions + unmeasured, constraints
+        return [], executions + unmeasured, constraints, unmutated
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
         baseline, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
         if config is None:
-            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints
+            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints, unmutated
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
@@ -256,7 +268,7 @@ def run_mutation(
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
         evaluated.append(execution)
-    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints
+    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints, unmutated
 
 
 def run_oracle(
@@ -267,13 +279,14 @@ def run_oracle(
     prompt_text: str,
     suppressed: set[str],
     budget: TrialBudget,
+    custom: Sequence[CustomMutant],
 ) -> list[OracleRecord]:
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
     Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
     a probe never lowers a label. A drop the test is too weak to call is suspected, not unchanged.
     """
-    mutants = PromptMutator(target_symbol=params.target).generate_mutants(prompt_text, params.max_mutants)
+    mutants = PromptMutator(params.target, custom).generate_mutants(prompt_text, params.max_mutants)
     mutants = [m for m in mutants if m.id not in suppressed]
     if not mutants:
         return []
@@ -317,12 +330,18 @@ def to_payload(
     baselines: Sequence[BaselineRecord] = (),
     executions: Sequence[MutantExecution] = (),
     constraints: Sequence[list[str]] = (),
+    unmutated: Sequence[list[str]] = (),
     oracle: Sequence[OracleRecord] = (),
+    tests: dict[str, int] | None = None,
+    targets: Sequence[str] = (),
 ) -> RecordsPayload:
     # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
         "baselines": [asdict(b) for b in baselines],
         "executions": [{**asdict(r), "status": str(r.status)} for r in executions],
         "constraints": list(constraints),
+        "unmutated": list(unmutated),
         "oracle": [asdict(o) for o in oracle],
+        "tests": tests or {},
+        "targets": list(targets),
     }

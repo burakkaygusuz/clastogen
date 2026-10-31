@@ -30,7 +30,7 @@ in its prompt gives the expected labels and confusion table.
 
 Model `openrouter/deepseek/deepseek-v4.1-flash` through pi 1.3.0 pinned to the `deepinfra/fp8` provider, clastogen 0.8.0, commit `9e20fb196`, 2026-10-17. The
 labels in `oracle.json` come from an earlier labelling with clastogen 0.6.0, which the new runs reuse. Full table:
-[`results/deepseek_deepseek-v4.1-flash/summary.md`](results/deepseek_deepseek-v4.1-flash/summary.md).
+[`results/deepseek_deepseek-v4.1-flash/summary.md`](results/deepseek_deepseek-v4.1-flash/summary.md), which ends with a per-rule table that `rules.py` rebuilt offline from the same 0.8.0 runs (the unmutated sentences were not recorded). `rules.py` is a one-off for these recorded runs: its inputs (`run_NN.json`) are git-ignored, and `run.py` rewrites `summary.md` and `summary.json` without the table. These numbers predate the alpha split by the number of tests (clastogen 0.8.0 ran every SPRT at alpha 0.05); a rerun with it has not been done, and with 12 tests on one prompt (alpha 0.05 / 12) it would give different numbers.
 
 - Mutation Score **27.1%** (26.5–29.4 over 5 runs), constraint coverage 28.6%, about 2,100 calls per run
   (about 55 minutes), no noisy baseline in any run.

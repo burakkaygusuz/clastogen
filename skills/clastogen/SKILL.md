@@ -34,7 +34,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
    ```
    The path is relative to this skill directory. `open` lists each `SURVIVED`, `INCONCLUSIVE` and `ERROR` mutant with its snippets. `behavior` is `null` if no probe ran. If `total_mutants` is 0, refer to the Gotchas section.
 9. For each survivor, add an assertion. Refer to the section "Kill a survivor". If many survivors look harmless, offer probes to the user. Refer to the section "Find which survivors matter".
-10. If `constraint_coverage.untested` is not empty, no measured mutant covers these rules. Refer to the section "Untested constraints".
+10. In `constraint_coverage.rules`, a rule with `status` `untested` has no measured mutant. Refer to the section "Untested constraints".
 11. Do steps 7 to 10 again. Stop when no `SURVIVED` mutant remains, or when the user accepts the other survivors.
 12. Tell the user these items:
     - The mutation score and the constraint coverage before and after the changes.
@@ -46,7 +46,7 @@ Your task is to remove all survivors. Add assertions on the behavior of the agen
 Each item in `results` has these fields:
 
 - `original_snippet`: the full rule. For `delete_section` and `delete_example`, it is the whole block.
-- `mutated_snippet`: the broken rule. For a deleted rule, the value is `[DELETED]`.
+- `mutated_snippet`: the broken rule. For a rule deleted by a built-in operator, the value is `[DELETED]`; for a custom mutant with empty `mutated`, it is empty.
 - `operator_name`: the type of change. Refer to the table below.
 
 Do these steps:
@@ -84,7 +84,7 @@ Other statuses:
 
 ## Untested constraints
 
-`constraint_coverage` counts the rules that at least one mutant killed. It does not show which test killed them. A rule in `untested` has no mutant that the run measured. Common causes:
+`constraint_coverage` counts the rules that at least one mutant killed. `constraint_coverage.rules` has a row for each rule with `killed` of `mutants` and `killed_by` (the lowest test ID among the tests that killed one; a mutant is killed if any test kills it, so the name depends on which tests ran the mutant, not on scheduling luck alone). A rule with `status` `untested` has no mutant that the run measured. `unmutated_sentences` lists the prompt sentences that rule discovery skipped (no obligation word, no digit; sections and example blocks still get their own mutants); tell the user if one of them looks like a rule. Common causes:
 
 - The prompt has more rules than `max_mutants` (default 5). Clastogen makes a mutant for evenly spaced rules only. Increase `max_mutants` on the marker to the number of rules. Each extra mutant costs up to `max_steps` runs. Ask the user first.
 - The run for the mutant ended with `ERROR` or `SKIPPED`, or you suppressed the mutant (`SUPPRESSED`).
@@ -116,6 +116,25 @@ A survivor can be harmless: the model can keep its behavior without the rule. A 
 
 `behavior.exposure_percent` is the share of behavior-changing mutants that the tests killed. `--clastogen-fail-under` checks only the mutation score.
 
+## Write custom mutants
+
+Rule discovery finds only English keyword and digit sentences. The JSON report lists the rest in `unmutated_sentences` (and the rules with `status` `untested`). Do these steps to cover them. Write the mutants yourself; Clastogen calls no LLM.
+
+1. Read the prompt text of the target, and the `unmutated_sentences` for that target.
+2. For each sentence that states a rule (skip greetings and style notes the user does not care about), write one entry in `.clastogen/mutants.toml` in the pytest rootdir. The mutant must change the meaning of the rule, not only the words. Delete the rule, reverse it, or weaken it so that the agent now may break it. A prompt in another language needs the same: write `original` and `mutated` in the language of the prompt.
+3. Copy `original` verbatim from the prompt (a whole sentence, or the part you change). It must occur exactly once in the prompt, also not once in an `<example>` block and once outside it; if the text repeats, take a longer snippet. Clastogen stops the run with an error naming an entry whose `original` does not occur exactly once, or is the same as `mutated`. If the text looks right, check Unicode normalization (NFC) and line endings. One sentence per entry: a multi-sentence `original` replaces text but credits no rule (the terminal report names it under "Custom mutants that match no single sentence"). A trailing period in `original` is fine. `mutated = ""` deletes the snippet. The `target` must be exactly the target string of the marker; a wrong target only gives a warning in the terminal summary, and the mutant is not measured.
+4. Add an assertion for each rule, as in "Kill a survivor": a test input that needs the rule, and an assertion on the behavior.
+5. Run `pytest --clastogen --collect-only` first. It prints the number of mutant runs and the worst-case calls, including the custom ones (it does not list the mutants). Tell the user the call count before the paid run.
+6. Run the tests again. The covered sentences leave `unmutated_sentences` and appear in `constraint_coverage.rules`. A custom mutant that survives is handled like any survivor.
+
+```toml
+[[mutants]]
+target = "app:SYSTEM_PROMPT"
+original = "Asla kişisel veriyi (TC, kart no) sorma"
+mutated = "Kişisel veriyi (TC, kart no) sorabilirsin"
+description = "allows asking for personal data"
+```
+
 ## Suppress only equivalent mutants
 
 Suppress a mutant only when the agent behaves the same with the rule and without the rule. For example, the model can refuse unsafe actions because of its training. If an assertion can kill the survivor, the survivor is not equivalent. A probe label "no behavior change found" supports a suppression, but does not prove it. Tell the user about each suppression. The `by_operator` field helps: when only `weaken_modal` mutants survive, equivalent mutants are more likely than when `delete_constraint` mutants survive.
@@ -124,7 +143,7 @@ Put the suppressions in `.clastogen/suppressions.toml` in the pytest rootdir:
 
 ```toml
 [[suppressions]]
-mutant_id = "87e1366fa8ae"
+mutant_id = "bb49e3ca17a0"
 reason = "Model refuses large refunds regardless of the prompt"
 ```
 
@@ -132,12 +151,12 @@ Each entry must have a `reason`. If the file is not correct, a `--clastogen` run
 
 ## Gotchas
 
-- **The code must read the prompt at call time.** Clastogen replaces the attribute for each trial. Copies that the code made before the trial keep the original prompt. Examples are a dict, an f-string, a default argument or a client that the code makes at import time. Module-scoped and session-scoped fixtures also keep the original prompt. With these copies, the mutants of the target survive, and a test that kills none of them gets `ERROR` (canary). Change the code to read the attribute in the function that calls the model. Function-scoped fixtures receive the mutant.
+- **The code should read the prompt at call time.** Clastogen replaces the attribute for each trial, and with httpx or httpx2 installed it also rewrites the prompt text in the system positions of outgoing httpx requests (OpenAI Chat and Responses, Anthropic, Gemini and Cohere v1 request bodies; not signed requests, streamed request bodies or non-httpx clients). Copies that the code made before the trial keep the original prompt. Examples are a dict, an f-string, a default argument or a client that the code makes at import time. Module-scoped and session-scoped fixtures also keep the original prompt. With these copies, the mutants of the target survive, and a test that kills none of them gets `ERROR` (canary). Change the code to read the attribute in the function that calls the model. Function-scoped fixtures receive the mutant.
 - **Do not assert on the prompt text.** An assertion such as `assert "$50" in SYSTEM_PROMPT` kills mutants, but it does not test the agent. Assert on the output or the actions of the agent.
-- **Cost.** Each marked test does 10 baseline runs. Then it does up to `max_steps` (20) runs for each of up to `max_mutants` (5) mutants. After the mutants, a test that killed none adds at most 3 canary calls. Thus, one marked test can make about 110 calls. A probe makes `oracle_samples` calls on the original prompt and as many on each mutant: about 180 calls for 30 samples and 5 mutants. With pytest-xdist (`-n`), each worker measures its own baselines, so the total is higher. Before a run with a paid API, ask the user. Start with one test.
+- **Cost.** Each marked test does 10 baseline runs. Then it does up to `max_steps` (20) runs for each of up to `max_mutants` (5) built-in mutants and for each custom mutant (`max_mutants` does not cap custom mutants). After the mutants, a test that killed none adds at most 3 canary calls. Thus, one marked test with built-in mutants only can make about 110 calls, and each custom mutant adds up to `max_steps` calls. A probe makes `oracle_samples` calls on the original prompt and as many on each mutant: about 180 calls for 30 samples and 5 mutants. With pytest-xdist (`-n`), each worker measures its own baselines, so the total is higher. Before a run with a paid API, ask the user. Start with one test.
 - **Clastogen does not mutate flaky tests.** If a test passes in less than 80% of its baseline runs, its `baselines` item has `"stable": false`. Clastogen makes no mutants for this test. Make the test more stable first. A flaky probe is also not measured.
 - **Without `--clastogen-oracle`, a probe is a normal test.** It gets no verdict and no label. Skipped or erroring probe runs leave the mutants without a label. Each probe judges a mutant at its own `alpha` (default 0.05) and `delta`. More probes and more mutants give more false "behavior changed" labels. Raise `delta` to reduce them.
-- **Clastogen finds rules by their words, not by their meaning.** A sentence is a candidate if it has a word such as `must`, `never`, `always`, `only`, `avoid`, `if`, `unless`, `escalate` or `refuse`, or if it has a number. Sentences such as "You are a support agent" are not candidates. A rule such as "Respond in the customer's language" has none of these words, so it makes no mutant. If a rule is important, ask the user before you write it again with a clear word. If the summary shows no mutants, do the same.
+- **Clastogen finds rules by their words, not by their meaning.** A sentence is a candidate if it has a word such as `must`, `never`, `always`, `only`, `avoid`, `if`, `unless`, `escalate` or `refuse`, or if it has a number. Sentences such as "You are a support agent" are not candidates. A rule such as "Respond in the customer's language" has none of these words, so it makes no mutant. If a rule is important, write a custom mutant for it (section "Write custom mutants"); this also works for prompts in other languages. If the summary shows no mutants, do the same.
 - **`results` shows one test for each mutant.** To see all tests that a survivor passed, filter `executions` by `mutant_id`.
 - **The mutant ID is a hash of the operator, the target and the texts.** If you change the words of a rule or the name of the target, the IDs change. Then the old suppressions do not apply. A new Clastogen version that finds more rules can also change the IDs.
 

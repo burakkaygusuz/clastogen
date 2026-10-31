@@ -129,4 +129,4 @@ def test_plan_counts_the_canary_trials(p0: float | None, calls: int) -> None:
     params = ClastogenParams("agent:PROMPT", max_mutants=2, max_steps=5, p0=p0)
     prompt = "You must never approve refunds over $50.\nYou must always verify identity."
 
-    assert plan_test("t::a", params, prompt, set(), with_oracle=False).calls == calls
+    assert plan_test("t::a", params, prompt, set(), False, ()).calls == calls

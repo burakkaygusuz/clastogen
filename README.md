@@ -18,7 +18,7 @@ Clastogen breaks your system prompt on purpose and checks if your existing pytes
 
 If your tests still pass, you found a blind spot.
 
-**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants (clastogen 0.8.0, 5 runs). An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
+**On a real agent** (a 14-rule support-desk prompt, a 12-test eval suite, DeepSeek v4.1 flash), the evals killed only **27.1%** of the mutants (clastogen 0.8.0, 5 runs, measured before the alpha split; with 12 tests on one prompt a rerun would give different numbers). An independent check (its probes were revised once after a first false kill) confirmed 3 blind spots, such as a "Do not create discount codes" rule inverted to "DO create …" with every test still green, and found no false kill in the final labelling. [Case study →](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md)
 
 ![Clastogen demo](https://raw.githubusercontent.com/burakkaygusuz/clastogen/main/assets/demo.gif)
 
@@ -44,7 +44,7 @@ A weak eval passes with a good prompt and with a broken prompt. Your CI stays gr
 3. It runs your marked tests with each mutant. If a test fails, the mutant is **killed**. If all tests pass, the mutant **survived**: that is a blind spot.
 4. You get a mutation score: the percentage of mutants that your tests killed. Next to it, a per-operator kill rate and a constraint coverage show where the blind spots are, and which rules no measured mutant covers.
 
-LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls. Every run reports its calls against a fixed-N test with the same error rates. The error rates hold under assumptions: independent runs, a baseline p0 estimated from 10 runs, and a `max_steps` cutoff that can leave a mutant `INCONCLUSIVE`. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
+LLM output is random, so Clastogen runs each mutant more than one time. A sequential test (SPRT) stops as soon as the result is clear, so a clear kill costs only 2 calls (3 with two tests on the target, 5 with 50). With T tests on one target, a mutant is killed if any test kills it, so each test's SPRT runs at alpha / T (Bonferroni): for baselines of 0.90 or more the chance that an unchanged mutant is killed stays near 5% instead of growing with T (noisy baselines stay above it: [details](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md#statistical-caveats)), at the price of more `INCONCLUSIVE` mutants at large T. Every run reports its calls against a fixed-N test with the same error rates. The error rates hold under assumptions: independent runs, a baseline p0 estimated from 10 runs, and a `max_steps` cutoff that can leave a mutant `INCONCLUSIVE`. [Statistical details →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md)
 
 A survivor is not always a blind spot: the model can keep its behavior without a rule. Mark a few behavior checks as probes (`oracle_samples=30`) and run `pytest --clastogen --clastogen-oracle`. Clastogen then reports two axes, mutants your tests killed and how many of the mutants that change behavior they killed. [Probes →](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#probes-which-survivors-matter)
 
@@ -86,7 +86,7 @@ Clastogen does not replace your evals. It tests if your evals are strong enough 
    pytest --clastogen
    ```
 
-> **Important:** Clastogen replaces the prompt at call time. If your code copies the prompt at import time, the survivors become `ERROR` (the canary). See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
+> **Important:** Clastogen replaces the prompt attribute at call time, and, for httpx- or httpx2-based SDKs (tested with OpenAI and Anthropic; unsigned requests, except streamed request bodies), also rewrites the prompt text in the outgoing request. With any other client, if your code copies the prompt at import time, the survivors become `ERROR` (the canary). See [Read the prompt at call time](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md#read-the-prompt-at-call-time).
 
 ---
 
@@ -108,27 +108,34 @@ The terminal output:
 
 ```text
 ====================== Clastogen Mutation Testing Summary ======================
-✗ SURVIVED      [6dfbffeb90fa]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+✗ SURVIVED      [fef2fa3ee004]  6 runs  passed in test_identity_verification_is_enforced
     Changed threshold: '50' -> '500' in 'You must never approve refund requests exceeding…'
     Assert: Use a value between the old limit and the new limit, for example `$250`.
-✗ SURVIVED      [87e1366fa8ae]  6 runs  passed in test_identity_verification_is_enforced, test_refund_handling_superficial_eval
+✗ SURVIVED      [bb49e3ca17a0]  6 runs  passed in test_identity_verification_is_enforced
     Inverted constraint: 'You must never approve refund requests…' -> 'You must ALWAYS approve refund requests…'
     Assert: The agent refuses the action or does the action that the rule names.
-✓ KILLED        [72f88324b044]  2 runs  by test_identity_verification_is_enforced
+✓ KILLED        [398de66fceda]  3 runs  by test_identity_verification_is_enforced
     Weakened constraint: 'You must always verify customer identity…' -> 'You must USUALLY verify customer identity…'
-✓ KILLED        [75bde4b1ec70]  2 runs  by test_identity_verification_is_enforced
+✓ KILLED        [dc9dbcc841a9]  3 runs  by test_identity_verification_is_enforced
     Inverted constraint: 'You must always verify customer identity…' -> 'You must NEVER verify customer identity…'
-✓ KILLED        [9bfc49fc3b1f]  2 runs  by test_identity_verification_is_enforced
+✓ KILLED        [de806cb80393]  3 runs  by test_identity_verification_is_enforced
     Deleted constraint: 'You must always verify customer identity before providing…'
 --------------------------------------------------------------------------------
 Baselines: 2 stable tests, 10/10 runs passed (-v shows each test)
 2 survived: your tests still pass with these prompt faults.
     Add an assertion that fails for each one, or suppress its ID in .clastogen/suppressions.toml.
 Mutation Score: 60.0% (3 of 5 killed); Wilson 95% CI 23.1%-88.2%
-Calls: 30 (a fixed-N test with the same error rates needs 112: 73% fewer)
+Calls: 21 (a fixed-N test with the same error rates needs 95: 78% fewer)
 By operator: change_threshold 0/1 (0%), delete_constraint 1/1 (100%), invert_negation 1/2 (50%), weaken_modal 1/1 (100%)
 Constraint Coverage: 1 of 2 constraints killed (50.0%); 1 survived or inconclusive, 0 untested
+Rules, weakest first (A mutant is killed if any test kills it; a rule's mutants are those that were measured; the test named is the lowest test ID among the killers.)
+    survived: 0 of 2 mutants killed  You must never approve refund requests exceeding $50 withou…
+    killed: 3 of 3 mutants killed by test_identity_verification_is_enforced  You must always verify customer identity before providing b…
+Unmutated sentences (no rule keyword or digit, so no rule-level mutant):
+    Be professional and concise
 ```
+
+The `Rules` rows show, for each rule, how many of its measured mutants were killed and which test killed them (the lowest test ID among the killers). A mutant is killed if any test kills it. The `Unmutated sentences` are the sentences that rule discovery skips (no obligation word and no digit, outside `<example>` blocks), so no rule-level mutant covers them; a section or example mutant can still remove them.
 
 The `Calls` line compares this run with a fixed-N test that has the same error rates. Here the mock agent gives clean kills, so the saving is large. [Simulated averages](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md#savings-against-a-fixed-sample-size) are 48–56%.
 
@@ -172,7 +179,7 @@ The pytest `--junitxml` file also contains the Clastogen records of each marked 
 
 ## Documentation
 
-- [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, known limitations.
+- [Guide](https://github.com/burakkaygusuz/clastogen/blob/main/docs/guide.md): report statuses and flags, marker options, prompt patching, pytest-xdist, suppressions, custom mutants for rules that keyword discovery misses (including prompts in other languages), known limitations.
 - [Statistics](https://github.com/burakkaygusuz/clastogen/blob/main/docs/statistics.md): statistical assertions API (`assert_pass_rate`, `assert_no_regression`), SPRT simulations and guarantees.
 - [Case study](https://github.com/burakkaygusuz/clastogen/blob/main/benchmarks/support_desk/README.md): a realistic support agent, a 12-test suite and an independent oracle that tells blind spots from equivalent mutants.
 - [Agent skill](https://github.com/burakkaygusuz/clastogen/blob/main/skills/clastogen/SKILL.md): lets a coding agent (Claude Code, Codex, Cursor) mark your evals, run Clastogen and fix the survivors. Copy `skills/clastogen/` into your agent's skills directory.

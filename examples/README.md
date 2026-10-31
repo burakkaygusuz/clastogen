@@ -21,7 +21,7 @@ uvx --with clastogen pytest --pyargs clastogen.demo --clastogen
 1. Pytest reports **`2 passed`** (100% green tests).
 2. Each test is re-run 9 more times unmutated to measure its baseline pass rate (Laplace p0).
 3. Clastogen injects 5 prompt mutants into memory and judges each with an SPRT.
-4. The strong test **KILLS** all three identity mutants (rule deleted, inverted, weakened) in 2 trials each.
+4. The strong test **KILLS** all three identity mutants (rule deleted, inverted, weakened) in 3 trials each (alpha is split over the 2 tests).
 5. The superficial test lets both refund mutants (rule inverted, $50 limit raised to $500) **SURVIVE** after 6 trials each.
 6. Clastogen outputs the truth: **`Mutation Score: 60.0%`** (3 of 5 caught), exposing the blind spot before production.
 

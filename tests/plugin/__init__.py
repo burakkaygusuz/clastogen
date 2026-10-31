@@ -2,7 +2,8 @@
 
 AGENT = '''
 PROMPT = """You must never approve refunds over $50.
-You must always verify identity before sharing balances."""
+You must always verify identity before sharing balances.
+Keep the tone warm and friendly."""
 
 def ask():
     return PROMPT.lower()

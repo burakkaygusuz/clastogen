@@ -100,7 +100,7 @@ def test_skill_script_lists_open_mutants_and_rejects_a_bad_report(tmp_path: Path
     report = tmp_path / "clastogen.json"
     report.write_text(json.dumps({
         "mutation_score": 50.0, "mutation_score_ci95": [9.5, 90.5], "counts": {"SURVIVED": 1, "KILLED": 1},
-        "by_operator": {}, "constraint_coverage": {"untested": []}, "results": results,
+        "by_operator": {}, "constraint_coverage": {"rules": []}, "unmutated_sentences": [], "results": results,
         "behavior": {"exposure_percent": 0.0, "labels": {"aaa": "changed"}},
     }), encoding="utf-8")  # fmt: skip
 

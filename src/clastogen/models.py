@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -35,7 +36,10 @@ class RecordsPayload(TypedDict):
     baselines: list[dict[str, Any]]
     executions: list[dict[str, Any]]
     constraints: list[list[str]]
+    unmutated: list[list[str]]
     oracle: list[dict[str, Any]]
+    tests: dict[str, int]
+    targets: list[str]
 
 
 # Unmutated runs used to estimate p0; the Laplace estimate with n=10 keeps false KILLs on unchanged mutants low.
@@ -47,6 +51,28 @@ MIN_BASELINE_P0 = (math.ceil(MIN_BASELINE_RATE * BASELINE_RUNS) + 1) / (BASELINE
 NOISY_BASELINE_RATE = 0.90
 # Trials on an empty prompt after the mutants of a test that killed none: passing all of them means its survivors say nothing.
 CANARY_RUNS = 3
+
+
+CUSTOM_OPERATOR = "custom"
+
+
+def snippet_covers(original: str, sentence: str) -> bool:
+    """True when a custom mutant's original snippet, minus surrounding whitespace and trailing .!?;:, sits inside the sentence.
+
+    Sentences are stored without their trailing punctuation, so an original copied with its period must still match.
+    """
+    core = original.strip().rstrip(".!?;:").rstrip()
+    return bool(core) and core in sentence
+
+
+@dataclass(frozen=True)
+class CustomMutant:
+    """A hand- or agent-written mutant from .clastogen/mutants.toml; mutated "" deletes the snippet."""
+
+    target: str
+    original: str
+    mutated: str
+    description: str
 
 
 def _check_int(name: str, value: object, minimum: int) -> None:
@@ -81,8 +107,8 @@ class Mutant:
         mutated_prompt: str,
         description: str,
     ) -> Mutant:
-        """Constructs a mutant with a stable 12-character SHA-256 hash ID."""
-        content_key = f"{operator_name}:{target_symbol}:{original_snippet}->{mutated_snippet}"
+        """Constructs a mutant with a stable 12-character SHA-256 hash ID over the JSON-encoded fields."""
+        content_key = json.dumps([operator_name, target_symbol, original_snippet, mutated_snippet], ensure_ascii=False)
         stable_id = hashlib.sha256(content_key.encode("utf-8")).hexdigest()[:12]
         return cls(
             id=stable_id,
@@ -152,11 +178,32 @@ class OracleRecord:
 
 
 @dataclass(frozen=True)
+class RuleCoverage:
+    """Evidence for one extracted rule: how many of its measured mutants were killed, and the lowest test ID among the tests that killed one.
+
+    A mutant counts as killed when any test killed it; killed_by is the lowest test ID among those killers.
+    """
+
+    target: str
+    rule: str
+    killed: int
+    mutants: int
+    killed_by: str | None
+
+    @property
+    def status(self) -> Literal["killed", "survived", "untested"]:
+        if self.killed:
+            return "killed"
+        return "survived" if self.mutants else "untested"
+
+
+@dataclass(frozen=True)
 class MutationSummary:
     """Order-independent aggregate of all mutant evaluations in a session.
 
     calls and fixed_calls sum sample_count and fixed_n over every sampled execution, not only the merged results.
     behavior maps a mutant ID to the strongest label of any probe; mutants no probe measured are absent.
+    tests maps a target to T, the number of tests the SPRT alpha of its mutants is divided by.
     """
 
     results: tuple[MutantExecution, ...]
@@ -164,9 +211,9 @@ class MutationSummary:
     score: float | None
     calls: int = 0
     fixed_calls: int = 0
-    constraints_killed: int = 0
-    constraints_survived: int = 0
-    untested: tuple[str, ...] = ()
+    rules: tuple[RuleCoverage, ...] = ()
+    unmutated: tuple[tuple[str, str], ...] = ()
+    tests: dict[str, int] = field(default_factory=dict)
     behavior: dict[str, Behavior] = field(default_factory=dict)
 
     @property
@@ -174,8 +221,20 @@ class MutationSummary:
         return len(self.results)
 
     @property
+    def constraints_killed(self) -> int:
+        return sum(r.status == "killed" for r in self.rules)
+
+    @property
+    def constraints_survived(self) -> int:
+        return sum(r.status == "survived" for r in self.rules)
+
+    @property
+    def untested(self) -> tuple[str, ...]:
+        return tuple(r.rule for r in self.rules if r.status == "untested")
+
+    @property
     def constraints_total(self) -> int:
-        return self.constraints_killed + self.constraints_survived + len(self.untested)
+        return len(self.rules)
 
     @property
     def coverage(self) -> float | None:
@@ -226,8 +285,12 @@ class ClastogenPluginState:
     oracle: list[OracleRecord] = field(default_factory=list)
     summary: MutationSummary | None = None
     constraints: set[tuple[str, str]] = field(default_factory=set)
+    unmutated: set[tuple[str, str]] = field(default_factory=set)
+    tests: dict[str, int] = field(default_factory=dict)
     killed_mutants: set[str] = field(default_factory=set)
     suppressed_mutants: set[str] = field(default_factory=set)
+    custom_mutants: tuple[CustomMutant, ...] = ()
+    measured_targets: set[str] = field(default_factory=set)
     marked_tests_count: int = 0
     preview: list[RunPlan] = field(default_factory=list)
     budget: TrialBudget = field(default_factory=TrialBudget)

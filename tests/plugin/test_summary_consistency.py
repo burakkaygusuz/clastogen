@@ -224,8 +224,12 @@ def test_untested_constraint_is_reported_in_terminal_and_json(pytester: pytest.P
     json_out = pytester.path / "out.json"
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
     cov = json.loads(json_out.read_text(encoding="utf-8"))["constraint_coverage"]
-    check.equal((cov["total"], cov["killed"], len(cov["untested"])), (2, 1, 1))
-    check.equal(cov["untested"], ["You must always verify identity before sharing balances."])
+    check.equal((cov["total"], cov["killed"]), (2, 1))
+    untested = [r for r in cov["rules"] if r["status"] == "untested"]
+    check.equal([r["rule"] for r in untested], ["You must always verify identity before sharing balances"])
+    check.equal([(r["killed"], r["mutants"]) for r in cov["rules"]], [(0, 0), (1, 1)])
+    check.equal(cov["rules"][1]["killed_by"].split("::")[-1], "test_strong")
+    check.is_in("untested: no measured mutant", result.stdout.str())
     check.is_in(
         "Constraint Coverage: 1 of 2 constraints killed (50.0%); 0 survived or inconclusive, 1 untested",
         result.stdout.str(),

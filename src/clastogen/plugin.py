@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 
+from clastogen.custom_mutants import load_custom_mutants
 from clastogen.models import (
     BaselineRecord,
     ClastogenParams,
@@ -18,6 +19,7 @@ from clastogen.models import (
     TrialBudget,
 )
 from clastogen.mutation.injection import resolve_target
+from clastogen.mutation.mutator import PromptMutator
 from clastogen.reporting import terminal
 from clastogen.reporting.render import render_html, render_json, render_markdown
 from clastogen.reporting.scoring import below_threshold, summarize
@@ -93,6 +95,9 @@ class _RecordCollector:
             records = cast(RecordsPayload, payload)
             self._state.marked_tests_count += 1
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
+            self._state.unmutated.update((target, sentence) for target, sentence in records["unmutated"])
+            self._state.tests.update(records["tests"])
+            self._state.measured_targets.update(records["targets"])
             self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
             self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
             for r in records["executions"]:
@@ -105,7 +110,9 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10, oracle_samples=None): Run Clastogen on target prompt; oracle_samples=N makes the test a behavior probe.",
     )
-    suppressed = load_suppressions(config.rootpath) if config.getoption("--clastogen") else set()
+    enabled = config.getoption("--clastogen")
+    suppressed = load_suppressions(config.rootpath) if enabled else set()
+    custom = load_custom_mutants(config.rootpath) if enabled else ()
     limit: int | None = config.getoption("--clastogen-max-calls", None)
     if limit is not None and limit < 1:
         raise pytest.UsageError(f"--clastogen-max-calls must be at least 1, got {limit}")
@@ -115,7 +122,7 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError(f"--clastogen-max-calls {limit} is below the {workers} xdist workers; each needs one")
     if limit is not None and _is_xdist_worker(config):
         limit //= int(os.environ["PYTEST_XDIST_WORKER_COUNT"])
-    state = ClastogenPluginState(suppressed_mutants=suppressed, budget=TrialBudget(limit))
+    state = ClastogenPluginState(suppressed_mutants=suppressed, custom_mutants=custom, budget=TrialBudget(limit))
     config.stash[STATE_KEY] = state
     if not _is_xdist_worker(config):
         config.pluginmanager.register(_RecordCollector(state), "clastogen-record-collector")
@@ -162,30 +169,92 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     trial = state.budget.wrap(partial(run_trial, item))
     if (samples := params.oracle_samples) is not None:
         oracle = []
-        if item.config.getoption("--clastogen-oracle", False):
+        oracle_ran = item.config.getoption("--clastogen-oracle", False)
+        if oracle_ran:
             oracle = run_oracle(
-                item.nodeid, trial, params, samples, prompt_text, state.suppressed_mutants, state.budget
+                item.nodeid,
+                trial,
+                params,
+                samples,
+                prompt_text,
+                state.suppressed_mutants,
+                state.budget,
+                state.custom_mutants,
             )
-        item.user_properties.append((_RECORDS_KEY, to_payload(oracle=oracle)))
+        item.user_properties.append(
+            (_RECORDS_KEY, to_payload(oracle=oracle, targets=[params.target] if oracle_ran else []))
+        )
         return res
 
-    baselines, executions, constraints = run_mutation(item.nodeid, trial, params, prompt_text, state)
-    item.user_properties.append((_RECORDS_KEY, to_payload(baselines, executions, constraints)))
+    baselines, executions, constraints, unmutated = run_mutation(item.nodeid, trial, params, prompt_text, state)
+    tests = {params.target: state.tests.get(params.target, 1)}
+    item.user_properties.append(
+        (_RECORDS_KEY, to_payload(baselines, executions, constraints, unmutated, tests=tests, targets=[params.target]))
+    )
     return res
 
 
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node) -> None:  # noqa: ANN001  # xdist WorkerController, xdist is optional
+    node.workerinput["clastogen_repeats"] = node.workerinput["workercount"] if node.config.option.dist == "each" else 1
+
+
+def _check_custom_mutants(session: pytest.Session, state: ClastogenPluginState) -> None:
+    """Fails the run before any trial when a custom mutant does not fit the current prompt of its target.
+
+    A target no collected test marks is not an error here: running a subset of the suite legitimately leaves it out,
+    so the terminal summary warns about it instead. An xdist worker skips the check, because an exception while it
+    collects crashes the controller; there the same ValueError fails the first test that generates the mutants.
+    """
+    if not state.custom_mutants or _is_xdist_worker(session.config):
+        return
+    seen: set[str] = set()
+    for item in session.items:
+        if (marker := item.get_closest_marker("clastogen")) is None:
+            continue
+        try:
+            params, prompt_text = _parse_marker(item, marker)
+        except pytest.UsageError:
+            continue  # reported when the test runs
+        if params.target in seen:
+            continue
+        seen.add(params.target)
+        try:
+            PromptMutator(params.target, state.custom_mutants).custom_mutants(prompt_text)
+        except ValueError as exc:
+            raise pytest.UsageError(f"{exc} (.clastogen/mutants.toml, used by '{item.nodeid}')") from exc
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
-    """Under --collect-only, plans every marked test so the terminal can preview the run without executing it."""
+    """Counts the tests per target after every deselection (-k, --lf), and under --collect-only previews the run."""
     config = session.config
-    if not config.option.collectonly or not config.getoption("--clastogen", False):
+    if not config.getoption("--clastogen", False):
         return
 
     state = config.stash[STATE_KEY]
-    with_oracle = config.getoption("--clastogen-oracle", False)
+    # Probes get no SPRT verdict, so they are not part of the family. Every worker collects every selected test,
+    # so each counts the whole family; with --dist each a worker runs all of them again, so the family grows by the
+    # worker count (the controller says so in workerinput).
+    repeats = getattr(config, "workerinput", {}).get("clastogen_repeats", 1)
     for item in session.items:
         if marker := item.get_closest_marker("clastogen"):
-            params, prompt_text = _parse_marker(item, marker)
-            state.preview.append(plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle))
+            try:
+                params = ClastogenParams(*marker.args, **marker.kwargs)
+            except (TypeError, ValueError):
+                continue
+            if params.oracle_samples is None:
+                state.tests[params.target] = state.tests.get(params.target, 0) + repeats
+    _check_custom_mutants(session, state)
+    if config.option.collectonly:
+        with_oracle = config.getoption("--clastogen-oracle", False)
+        for item in session.items:
+            if marker := item.get_closest_marker("clastogen"):
+                params, prompt_text = _parse_marker(item, marker)
+                state.preview.append(
+                    plan_test(
+                        item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle, state.custom_mutants
+                    )
+                )
 
 
 def _write_report(path: str, text: str) -> None:
@@ -208,7 +277,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         return
     state.baselines.sort(key=lambda b: b.test_id)
     state.executions.sort(key=lambda r: (r.mutant_id, r.test_id))
-    summary = summarize(state.executions, state.constraints, state.oracle)
+    summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated, state.tests)
     state.summary = summary
 
     json_path = session.config.getoption("--clastogen-json", None)

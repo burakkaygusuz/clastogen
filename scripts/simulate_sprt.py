@@ -71,10 +71,12 @@ def run_simulation(
     return _tally([r.decision for r in results], [r.sample_count for r in results], true_p, 0.0)
 
 
-def _baseline_config(rng: random.Random, baseline_p: float, delta: float, max_steps: int) -> SPRTConfig | None:
+def _baseline_config(
+    rng: random.Random, baseline_p: float, delta: float, max_steps: int, alpha: float = 0.05
+) -> SPRTConfig | None:
     """Mimics the plugin baseline: the passing test run plus BASELINE_RUNS - 1 reruns; None when rejected as flaky."""
     baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
-    return config_from_baseline(baseline, delta=delta, max_steps=max_steps)
+    return config_from_baseline(baseline, delta=delta, max_steps=max_steps, alpha=alpha)
 
 
 def run_full_flow_simulation(
@@ -85,6 +87,7 @@ def run_full_flow_simulation(
     trials: int = 10_000,
     seed: int = 42,
     family_size: int = FAMILY_SIZE,
+    alpha: float = 0.05,
 ) -> SimulationStats:
     """Simulates the plugin decision path: baseline runs -> Laplace p0 -> SPRT on the mutant.
 
@@ -112,7 +115,7 @@ def run_full_flow_simulation(
         return family_rng.random() < mutant_p  # NOSONAR
 
     for _ in range(trials):
-        config = _baseline_config(rng, baseline_p, delta, max_steps)
+        config = _baseline_config(rng, baseline_p, delta, max_steps, alpha)
         if config is None:
             continue
         sprt = SPRT(config)
@@ -125,6 +128,30 @@ def run_full_flow_simulation(
     if not decisions:
         return SimulationStats(mutant_p, 0, 0.0, 0.0, 0.0, 0.0, 0, 0, rejected)
     return _tally(decisions, steps, mutant_p, rejected, any_killed / len(decisions) * 100.0)
+
+
+def run_test_family_simulation(
+    baseline_p: float, tests: int, trials: int = 10_000, seed: int = 42, alpha: float = 0.05, delta: float = 0.30
+) -> float:
+    """Percent of trials where one unchanged mutant is KILLED by at least one of `tests` tests of a target.
+
+    Each test has its own baseline (all with pass rate baseline_p) and runs its own SPRT at `alpha` (the plugin passes
+    alpha / T); a test whose baseline is rejected as flaky does not run the mutant and counts as not killing it. This is T tests on one mutant,
+    unlike family_size above, which is many mutants on one baseline.
+    """
+    rng = random.Random(seed)
+
+    def passes() -> bool:
+        return rng.random() < baseline_p  # NOSONAR
+
+    killed = 0
+    for _ in range(trials):
+        for _ in range(tests):
+            config = _baseline_config(rng, baseline_p, delta, 20, alpha)
+            if config and SPRT(config).run_evaluator(passes).decision == Decision.KILLED:
+                killed += 1
+                break
+    return killed / trials * 100.0
 
 
 def run_fixed_n_flow(
@@ -251,6 +278,35 @@ def print_simulation_report(title: str, config: SPRTConfig, stats_list: list[Sim
     print(format_simulation_report(title, config, stats_list))
 
 
+TEST_COUNTS = (1, 12, 50)
+
+
+def format_test_family_report(trials: int) -> str:
+    """Scenario 3c: T tests on one target; each SPRT runs at alpha / T, which is what the plugin does."""
+    lines = [
+        "=" * 100,
+        " Scenario 3c: T tests on one target, one mutant, alpha / T per SPRT (Bonferroni), max_steps=20, delta=0.30",
+        " False kill %: an unchanged mutant is KILLED by any of T tests, each with its own 10-run baseline",
+        "-" * 100,
+        f"{'Base P':<7} | " + " | ".join(f"T={t}: alpha, alpha/T".ljust(24) for t in TEST_COUNTS),
+    ]
+    for base in (0.90, 0.85, 0.80):
+        cells = [
+            f"{run_test_family_simulation(base, t, trials):5.1f}, "
+            f"{run_test_family_simulation(base, t, trials, alpha=0.05 / t):5.1f}".ljust(24)
+            for t in TEST_COUNTS
+        ]
+        lines.append(f"{base:<7.2f} | " + " | ".join(cells))
+    lines += ["-" * 100, " Drop of exactly delta (0.90 -> 0.60), one mutant, alpha / T:"]
+    for t in TEST_COUNTS:
+        s = run_full_flow_simulation(0.90, 0.60, trials=trials, family_size=1, alpha=0.05 / t)
+        lines.append(
+            f"  T={t:<3} KILLED {s.pct_killed:5.1f}%  INCONCLUSIVE {s.pct_inconclusive:5.1f}%  "
+            f"SURVIVED {s.pct_survived:5.1f}%  ASN {s.asn:.1f}"
+        )
+    return "\n".join(lines)
+
+
 def main() -> None:
     trials = 10_000
 
@@ -289,6 +345,8 @@ def main() -> None:
             "Scenario 3b: same flow, fixed-N exact binomial test at alpha=0.05 (KILLED %)", fixed_rows
         )
     )
+
+    print(format_test_family_report(trials))
 
     print("=" * 80)
     print(" Scenario 4: assert_pass_rate defaults (min_rate=0.90, tolerance=0.20, confidence=0.95, max_samples=50)")
