@@ -12,6 +12,12 @@ TURKISH = "Asla kişisel veriyi (TC, kart no) sorma.\nKibar ol ve nazik konuş.\
 PERSONAL = CustomMutant(
     "T", "Asla kişisel veriyi (TC, kart no) sorma", "Kişisel veriyi (TC, kart no) sorabilirsin", "asks"
 )
+GERMAN = "Frage niemals nach dem Passwort oder der Straße.\nSei höflich und freundlich.\nAntworten bleiben kurz."
+SPANISH = "Nunca pidas la contraseña del niño.\n¿Entendido? Sé amable.\nResponde con pocas palabras."
+GERMAN_RULE = CustomMutant(
+    "T", "Frage niemals nach dem Passwort oder der Straße", "Frage ruhig nach dem Passwort oder der Straße", "asks"
+)
+SPANISH_RULE = CustomMutant("T", "Nunca pidas la contraseña del niño", "Pide la contraseña del niño", "asks")
 ENGLISH = "You must never approve refunds over $50.\nYou must always verify identity.\nKeep it short and friendly."
 
 
@@ -27,6 +33,18 @@ def test_a_prompt_without_builtin_matches_still_gets_a_custom_mutant() -> None:
     assert mutant.operator_name == CUSTOM_OPERATOR
     assert mutant.mutated_prompt == TURKISH.replace(PERSONAL.original, PERSONAL.mutated)
     assert mutant.description == "asks"
+
+
+@pytest.mark.parametrize(
+    ("prompt", "rule"), [(GERMAN, GERMAN_RULE), (SPANISH, SPANISH_RULE)], ids=["german", "spanish"]
+)
+def test_a_german_or_spanish_prompt_gets_a_custom_mutant(prompt: str, rule: CustomMutant) -> None:
+    assert not PromptMutator("T").generate_mutants(prompt, 5)
+
+    (mutant,) = _gen(prompt, [rule])
+
+    assert mutant.operator_name == CUSTOM_OPERATOR
+    assert mutant.mutated_prompt == prompt.replace(rule.original, rule.mutated)
 
 
 def test_custom_mutants_come_first_and_ignore_other_targets() -> None:

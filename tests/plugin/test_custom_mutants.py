@@ -46,6 +46,16 @@ def test_load_custom_mutants_reads_entries_and_allows_an_empty_mutated(tmp_path:
     assert second.mutated == ""
 
 
+def test_load_custom_mutants_reads_german_and_spanish_text(tmp_path: Path) -> None:
+    german = ENTRY.replace("Asla kişisel veriyi (TC, kart no) sorma", "Frage niemals nach der Straße")
+    spanish = ENTRY.replace("Asla kişisel veriyi (TC, kart no) sorma", "¿Nunca pidas la contraseña del niño?")
+    _write(tmp_path, german + spanish)
+
+    mutants = load_custom_mutants(tmp_path)
+
+    assert [m.original for m in mutants] == ["Frage niemals nach der Straße", "¿Nunca pidas la contraseña del niño?"]
+
+
 @pytest.mark.parametrize(
     ("text", "match"),
     [
