@@ -10,7 +10,6 @@ keywords = ["llm", "mutation-testing", "pytest", "ai-agents", "sprt", "evaluatio
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -45,15 +44,15 @@ clastogen = "clastogen.plugin"
 
 [dependency-groups]
 dev = [
-    "anthropic>=1.11.0",
+    "anthropic>=2.6.0",
     "httpx>=0.28.1",
-    "hypothesis>=6.170.1",
-    "openai>=2.54.0",
+    "hypothesis>=6.170.15",
+    "openai>=3.46.0",
     "pytest-check>=3.0.3",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.17.1",
-    "ty>=0.0.89",
+    "ruff>=0.17.4",
+    "ty>=0.0.99",
 ]
 
 [tool.semantic_release]
