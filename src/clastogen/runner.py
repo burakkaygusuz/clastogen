@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import (
@@ -225,14 +225,26 @@ def _baseline_rejected(
     return [_execution(test_id, m, status, error=reason) for m in mutants]
 
 
+@dataclass(frozen=True)
+class MutationRun:
+    """What run_mutation found for one marked test.
+
+    constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them; unmutated are the
+    [target, sentence] pairs that rule discovery skipped.
+    """
+
+    baselines: list[BaselineRecord]
+    executions: list[MutantExecution]
+    constraints: list[list[str]]
+    unmutated: list[list[str]]
+
+
 def run_mutation(
     test_id: str, trial: Callable[[], bool], params: ClastogenParams, prompt_text: str, state: ClastogenPluginState
-) -> tuple[list[BaselineRecord], list[MutantExecution], list[list[str]], list[list[str]]]:
+) -> MutationRun:
     """Mutates the target prompt and runs the SPRT on every mutant not yet killed or suppressed.
 
-    Records newly killed mutants in state so later tests skip them; returns (baselines, executions, constraints, unmutated),
-    where constraints are the [target, rule] pairs of the prompt whether or not a mutant was made for them and
-    unmutated are the [target, sentence] pairs that rule discovery skipped.
+    Records newly killed mutants in state so later tests skip them.
     """
     # Bonferroni: an unchanged mutant faces every test of the target, and any one kill counts, so each SPRT gets alpha / T.
     params = replace(params, alpha=params.alpha / state.tests.get(params.target, 1))
@@ -245,12 +257,12 @@ def run_mutation(
     executions = [_execution(test_id, m, MutantStatus.SUPPRESSED) for m in mutants if m.id in state.suppressed_mutants]
     pending = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not pending:
-        return [], executions, constraints, unmutated
+        return MutationRun([], executions, constraints, unmutated)
 
     # The test starts only when at least one mutant can be funded after it.
     if not state.budget.fits(_baseline_calls(params) + params.max_steps):
         unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
-        return [], executions + unmeasured, constraints, unmutated
+        return MutationRun([], executions + unmeasured, constraints, unmutated)
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
@@ -258,7 +270,7 @@ def run_mutation(
         baselines.append(baseline)
         if config is None:
             rejected = _baseline_rejected(test_id, pending, baseline_state, baseline.error)
-            return baselines, executions + rejected, constraints, unmutated
+            return MutationRun(baselines, executions + rejected, constraints, unmutated)
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
@@ -273,7 +285,9 @@ def run_mutation(
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
         evaluated.append(execution)
-    return baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints, unmutated
+    return MutationRun(
+        baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints, unmutated
+    )
 
 
 def run_oracle(
