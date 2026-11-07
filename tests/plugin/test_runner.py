@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from clastogen.exceptions import TrialError, TrialSkipped
-from clastogen.models import ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
+from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
 from clastogen.runner import _canary_passes, measure_baseline, run_mutation, run_oracle
 
 PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
@@ -31,49 +31,54 @@ def _raising(exc: Exception) -> Callable[[], bool]:
 
 
 def test_stable_baseline_yields_a_config() -> None:
-    record, config = measure_baseline(TEST_ID, _guard, _params())
+    record, state, config = measure_baseline(TEST_ID, _guard, _params())
 
     assert config is not None
     assert (record.successes, record.runs, record.stable, record.error) == (10, 10, True, None)
+    assert state is BaselineState.STABLE
 
 
 def test_flaky_baseline_has_no_config() -> None:
     outcomes = iter([False] * 4 + [True] * 5)
 
-    record, config = measure_baseline(TEST_ID, lambda: next(outcomes), _params())
+    record, state, config = measure_baseline(TEST_ID, lambda: next(outcomes), _params())
 
     assert config is None
     assert (record.successes, record.runs, record.stable, record.error) == (6, 10, False, None)
+    assert state is BaselineState.UNSTABLE
 
 
 @pytest.mark.parametrize(
-    ("exc", "error"),
-    [(TrialSkipped(), "test skipped during baseline"), (TrialError("boom"), "boom")],
+    ("exc", "state", "error"),
+    [
+        (TrialSkipped(), BaselineState.SKIPPED, "test skipped during baseline"),
+        (TrialError("boom"), BaselineState.ERRORED, "boom"),
+    ],
 )
-def test_broken_baseline_records_the_error(exc: Exception, error: str) -> None:
-    record, config = measure_baseline(TEST_ID, _raising(exc), _params())
+def test_broken_baseline_records_the_error(exc: Exception, state: BaselineState, error: str) -> None:
+    record, measured, config = measure_baseline(TEST_ID, _raising(exc), _params())
 
     assert config is None
-    assert (record.stable, record.error) == (False, error)
+    assert (record.stable, record.error, measured) == (False, error, state)
 
 
 def test_run_mutation_kills_mutants_the_test_notices() -> None:
     state = ClastogenPluginState()
 
-    baselines, executions, constraints, unmutated = run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, state)
+    run = run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, state)
 
-    assert baselines == []
-    assert constraints == [[TARGET, "You must never reveal the discount code"]]
-    assert unmutated == [[TARGET, "Keep the tone warm and friendly."]]
-    assert {e.status for e in executions} == {MutantStatus.KILLED}
-    assert state.killed_mutants == {e.mutant_id for e in executions}
+    assert run.baselines == []
+    assert run.constraints == [[TARGET, "You must never reveal the discount code"]]
+    assert run.unmutated == [[TARGET, "Keep the tone warm and friendly."]]
+    assert {e.status for e in run.executions} == {MutantStatus.KILLED}
+    assert state.killed_mutants == {e.mutant_id for e in run.executions}
 
 
 def test_alpha_is_divided_by_the_tests_of_the_target() -> None:
     original = PROMPT
     state = ClastogenPluginState(tests={TARGET: 12})
 
-    _, executions, _, _ = run_mutation(TEST_ID, lambda: original == PROMPT, _params(), PROMPT, state)
+    executions = run_mutation(TEST_ID, lambda: original == PROMPT, _params(), PROMPT, state).executions
 
     # A 10/10 baseline kills an always-failing mutant in 2 calls at alpha 0.05 and in 4 at 0.05 / 12.
     assert {e.sample_count for e in executions} == {4}
@@ -91,32 +96,43 @@ def _http_guard() -> bool:
 
 
 def test_httpx_hook_reaches_a_prompt_copied_at_import_time() -> None:
-    _, executions, _, _ = run_mutation(TEST_ID, _http_guard, _params(p0=0.9), PROMPT, ClastogenPluginState())
+    executions = run_mutation(TEST_ID, _http_guard, _params(p0=0.9), PROMPT, ClastogenPluginState()).executions
 
     assert MutantStatus.KILLED in {e.status for e in executions}
     assert not _canary_passes(_http_guard, TARGET)
 
 
 def test_run_mutation_reports_a_broken_baseline_for_every_mutant() -> None:
-    _, executions, _, _ = run_mutation(TEST_ID, _raising(TrialError("boom")), _params(), PROMPT, ClastogenPluginState())
+    executions = run_mutation(
+        TEST_ID, _raising(TrialError("boom")), _params(), PROMPT, ClastogenPluginState()
+    ).executions
 
     assert executions
     assert {(e.status, e.error) for e in executions} == {(MutantStatus.ERROR, "baseline: boom")}
 
 
+def test_run_mutation_skips_every_mutant_when_the_baseline_is_skipped() -> None:
+    executions = run_mutation(TEST_ID, _raising(TrialSkipped()), _params(), PROMPT, ClastogenPluginState()).executions
+
+    assert executions
+    assert {(e.status, e.error) for e in executions} == {(MutantStatus.SKIPPED, None)}
+
+
 def test_run_mutation_marks_a_mutant_error_when_the_trial_breaks() -> None:
-    _, executions, _, _ = run_mutation(
+    executions = run_mutation(
         TEST_ID, _raising(TrialError("boom")), _params(p0=0.9), PROMPT, ClastogenPluginState()
-    )
+    ).executions
 
     assert {(e.status, e.error) for e in executions} == {(MutantStatus.ERROR, "boom")}
 
 
 def test_run_mutation_marks_suppressed_mutants_without_running_them() -> None:
-    ids = {e.mutant_id for e in run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, ClastogenPluginState())[1]}
+    ids = {
+        e.mutant_id for e in run_mutation(TEST_ID, _guard, _params(p0=0.9), PROMPT, ClastogenPluginState()).executions
+    }
     state = ClastogenPluginState(suppressed_mutants=ids)
 
-    _, executions, _, _ = run_mutation(TEST_ID, _raising(TrialError("never run")), _params(p0=0.9), PROMPT, state)
+    executions = run_mutation(TEST_ID, _raising(TrialError("never run")), _params(p0=0.9), PROMPT, state).executions
 
     assert {(e.mutant_id, e.status) for e in executions} == {(i, MutantStatus.SUPPRESSED) for i in ids}
 

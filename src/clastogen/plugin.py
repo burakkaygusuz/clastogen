@@ -186,10 +186,15 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         )
         return res
 
-    baselines, executions, constraints, unmutated = run_mutation(item.nodeid, trial, params, prompt_text, state)
+    run = run_mutation(item.nodeid, trial, params, prompt_text, state)
     tests = {params.target: state.tests.get(params.target, 1)}
     item.user_properties.append(
-        (_RECORDS_KEY, to_payload(baselines, executions, constraints, unmutated, tests=tests, targets=[params.target]))
+        (
+            _RECORDS_KEY,
+            to_payload(
+                run.baselines, run.executions, run.constraints, run.unmutated, tests=tests, targets=[params.target]
+            ),
+        )
     )
     return res
 
