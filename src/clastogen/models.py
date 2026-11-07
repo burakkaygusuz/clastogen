@@ -30,6 +30,15 @@ class MutantStatus(StrEnum):
     SUPPRESSED = "SUPPRESSED"
 
 
+class BaselineState(StrEnum):
+    """Outcome of the unmutated baseline runs; only STABLE yields an SPRT config."""
+
+    STABLE = "STABLE"
+    UNSTABLE = "UNSTABLE"
+    SKIPPED = "SKIPPED"
+    ERRORED = "ERRORED"
+
+
 class RecordsPayload(TypedDict):
     """Records of one marked test; execnet serializes only exact builtin types, so statuses travel as plain str."""
 

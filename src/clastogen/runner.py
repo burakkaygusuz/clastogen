@@ -9,6 +9,7 @@ from clastogen.models import (
     CANARY_RUNS,
     MIN_BASELINE_RATE,
     BaselineRecord,
+    BaselineState,
     Behavior,
     ClastogenParams,
     ClastogenPluginState,
@@ -38,28 +39,29 @@ _BUDGET_EXHAUSTED = "max-calls budget exhausted"
 
 def measure_baseline(
     test_id: str, trial: Callable[[], bool], params: ClastogenParams
-) -> tuple[BaselineRecord, SPRTConfig | None]:
-    """Reruns the passing test to estimate p0; the config is None when the baseline is too flaky or broken to mutate."""
+) -> tuple[BaselineRecord, BaselineState, SPRTConfig | None]:
+    """Reruns the passing test to estimate p0; the config is None unless the state is STABLE."""
     outcomes = [True]
+    state = BaselineState.STABLE
     error: str | None = None
     for _ in range(BASELINE_RUNS - 1):
         try:
             outcomes.append(trial())
         except TrialSkipped:
-            error = _BASELINE_SKIPPED
+            state, error = BaselineState.SKIPPED, _BASELINE_SKIPPED
             break
         except TrialError as exc:
             logger.exception("Baseline trial failed for test '%s'", test_id)
-            error = str(exc)
+            state, error = BaselineState.ERRORED, str(exc)
             break
 
-    config = (
-        None
-        if error
-        else config_from_baseline(
+    config = None
+    if state is BaselineState.STABLE:
+        config = config_from_baseline(
             outcomes, delta=params.delta, max_steps=params.max_steps, alpha=params.alpha, beta=params.beta
         )
-    )
+        if config is None:
+            state = BaselineState.UNSTABLE
     if config is None:
         logger.warning(
             "Baseline rejected (%d/%d passed, minimum %.0f%%) for test '%s' targeting '%s'%s.",
@@ -76,10 +78,10 @@ def measure_baseline(
         successes=sum(outcomes),
         runs=len(outcomes),
         p0=estimate_p0(outcomes),
-        stable=config is not None,
+        stable=state is BaselineState.STABLE,
         error=error,
     )
-    return record, config
+    return record, state, config
 
 
 def _execution(
@@ -210,11 +212,13 @@ def _apply_canary(
     ]
 
 
-def _baseline_rejected(test_id: str, mutants: Sequence[Mutant], error: str | None) -> list[MutantExecution]:
+def _baseline_rejected(
+    test_id: str, mutants: Sequence[Mutant], state: BaselineState, error: str | None
+) -> list[MutantExecution]:
     """Records the mutants a broken or flaky baseline left unmeasured, so a kill by another test takes precedence."""
-    if error == _BASELINE_SKIPPED:
+    if state is BaselineState.SKIPPED:
         status, reason = MutantStatus.SKIPPED, None
-    elif error:
+    elif state is BaselineState.ERRORED:
         status, reason = MutantStatus.ERROR, f"baseline: {error}"
     else:
         status, reason = MutantStatus.SKIPPED, _BASELINE_UNSTABLE
@@ -250,10 +254,11 @@ def run_mutation(
 
     baselines: list[BaselineRecord] = []
     if params.p0 is None:
-        baseline, config = measure_baseline(test_id, trial, params)
+        baseline, baseline_state, config = measure_baseline(test_id, trial, params)
         baselines.append(baseline)
         if config is None:
-            return baselines, executions + _baseline_rejected(test_id, pending, baseline.error), constraints, unmutated
+            rejected = _baseline_rejected(test_id, pending, baseline_state, baseline.error)
+            return baselines, executions + rejected, constraints, unmutated
     else:
         config = SPRTConfig.from_absolute_drop(
             p0=params.p0, delta=params.delta, alpha=params.alpha, beta=params.beta, max_steps=params.max_steps
