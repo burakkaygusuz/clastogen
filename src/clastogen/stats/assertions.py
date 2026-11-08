@@ -4,8 +4,8 @@ import math
 from collections.abc import Callable
 from statistics import NormalDist
 
-from clastogen.models import Decision, PassRateResult, RegressionResult, SPRTConfig
 from clastogen.stats.sprt import SPRT, check_outcome
+from clastogen.stats.types import Decision, PassRateResult, RegressionResult, SPRTConfig
 
 
 def compute_wilson_interval(successes: int, total: int, confidence: float = 0.95) -> tuple[float, float]:
@@ -112,7 +112,6 @@ def evaluate_pass_rate(
         return outcome
 
     res = sprt.run_evaluator(collect_sample)
-    # alpha == beta puts the midpoint between the Wald thresholds at 0.
     passed = res.decision == Decision.SURVIVED or (res.decision == Decision.INCONCLUSIVE and res.cumulative_llr < 0.0)
 
     n = len(samples)
@@ -182,7 +181,9 @@ def compare_pass_counts(
     Both counts come from sample_count independent trials; use it when the outcomes are already recorded.
     """
     _check_regression_args(sample_count, confidence)
-    # Candidate worse than baseline <=> baseline passes more often.
+    for name, passes in (("baseline_passes", baseline_passes), ("candidate_passes", candidate_passes)):
+        if not 0 <= passes <= sample_count:
+            raise ValueError(f"{name} must be between 0 and sample_count ({sample_count}), got {passes}")
     p_val = _fisher_upper_tail(baseline_passes, candidate_passes, sample_count)
     return RegressionResult(
         regressed=p_val < 1.0 - confidence,

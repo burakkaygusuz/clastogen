@@ -6,8 +6,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from clastogen.models import BASELINE_RUNS, MIN_BASELINE_P0, ClastogenParams, Decision
+from clastogen.models import BASELINE_RUNS, MIN_BASELINE_P0, ClastogenParams
 from clastogen.stats.sprt import SPRT, config_from_baseline
+from clastogen.stats.types import Decision
 
 REPS = 2000
 

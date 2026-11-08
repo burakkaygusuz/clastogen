@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random  # Seeded PRNG: the simulations must be reproducible, not unpredictable.
+import random
 import sys
 from dataclasses import dataclass
 from functools import cache
@@ -65,7 +65,7 @@ def run_simulation(
     sprt = SPRT(config)
 
     def evaluator() -> bool:
-        return rng.random() < true_p  # NOSONAR
+        return rng.random() < true_p
 
     results = [sprt.run_evaluator(evaluator) for _ in range(trials)]
     return _tally([r.decision for r in results], [r.sample_count for r in results], true_p, 0.0)
@@ -75,7 +75,7 @@ def _baseline_config(
     rng: random.Random, baseline_p: float, delta: float, max_steps: int, alpha: float = 0.05
 ) -> SPRTConfig | None:
     """Mimics the plugin baseline: the passing test run plus BASELINE_RUNS - 1 reruns; None when rejected as flaky."""
-    baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
+    baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]
     return config_from_baseline(baseline, delta=delta, max_steps=max_steps, alpha=alpha)
 
 
@@ -103,16 +103,16 @@ def run_full_flow_simulation(
         raise ValueError("baseline_p and mutant_p must be in [0, 1]")
 
     rng = random.Random(seed)
-    family_rng = random.Random(seed + 1)  # Separate stream: the single-mutant rates stay independent of family_size.
+    family_rng = random.Random(seed + 1)
     decisions: list[Decision] = []
     steps: list[int] = []
     any_killed = 0
 
     def mutant_evaluator() -> bool:
-        return rng.random() < mutant_p  # NOSONAR
+        return rng.random() < mutant_p
 
     def family_evaluator() -> bool:
-        return family_rng.random() < mutant_p  # NOSONAR
+        return family_rng.random() < mutant_p
 
     for _ in range(trials):
         config = _baseline_config(rng, baseline_p, delta, max_steps, alpha)
@@ -142,7 +142,7 @@ def run_test_family_simulation(
     rng = random.Random(seed)
 
     def passes() -> bool:
-        return rng.random() < baseline_p  # NOSONAR
+        return rng.random() < baseline_p
 
     killed = 0
     for _ in range(trials):
@@ -165,7 +165,7 @@ def run_fixed_n_flow(
         if config is None:
             continue
         accepted += 1
-        passes = sum(rng.random() < mutant_p for _ in range(n))  # NOSONAR
+        passes = sum(rng.random() < mutant_p for _ in range(n))
         killed += fixed_n_decision(passes, n, config.p0, config.alpha)
     return killed / accepted * 100.0 if accepted else 0.0
 
@@ -173,7 +173,7 @@ def run_fixed_n_flow(
 def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42) -> tuple[float, float]:
     """Returns (pass %, mean samples) of evaluate_pass_rate with its default arguments."""
     rng = random.Random(seed)
-    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]  # NOSONAR
+    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 

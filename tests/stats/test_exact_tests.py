@@ -2,8 +2,6 @@ import pytest
 
 from clastogen.stats.assertions import _binom_upper_tail, _fisher_upper_tail, compute_wilson_interval
 
-# Reference values computed with scipy.stats (binomtest / fisher_exact).
-
 
 @pytest.mark.parametrize(
     ("k", "n", "conf", "low", "high"),

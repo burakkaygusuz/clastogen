@@ -68,7 +68,6 @@ def test_fixed_sample_size_is_the_smallest_test_with_the_sprt_error_rates(
     check.equal((n, c), expected)
     check.less_equal(binom_cdf(n, c, config.p0), config.alpha)
     check.less_equal(1 - binom_cdf(n, c, config.p1), config.beta)
-    # One call fewer has no cutoff that satisfies both error rates.
     check.is_false(
         any(
             binom_cdf(n - 1, k, config.p0) <= config.alpha and 1 - binom_cdf(n - 1, k, config.p1) <= config.beta
@@ -89,7 +88,7 @@ def test_fixed_sample_size_survives_a_small_delta_that_overflowed_binomial_coeff
     found = fixed_sample_size(config)
     assert found is not None
     n, c = found
-    assert n > 1030  # math.comb(n, c) * float overflows from here
+    assert n > 1030
     assert binom_cdf(n, c, config.p0) <= config.alpha
     assert 1 - binom_cdf(n, c, config.p1) <= config.beta
     assert binom_cdf(n, c - 1, config.p0) <= config.alpha

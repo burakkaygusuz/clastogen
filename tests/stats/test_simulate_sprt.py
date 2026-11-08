@@ -11,7 +11,6 @@ from scripts.simulate_sprt import (
 
 
 def test_fixed_n_kills_at_or_below_critical_value_only() -> None:
-    # Binomial(10, 0.9): P(X <= 6) = 0.013 and P(X <= 7) = 0.070.
     assert fixed_n_decision(6, 10, 0.9, 0.05)
     assert not fixed_n_decision(7, 10, 0.9, 0.05)
 
@@ -47,8 +46,6 @@ def test_full_flow_rejects_empty_family() -> None:
 
 @pytest.mark.parametrize(("baseline_p", "ceiling"), [(0.90, 4.0), (0.85, 12.0), (0.80, 22.0)])
 def test_alpha_split_keeps_false_kills_of_many_tests_near_alpha(baseline_p: float, ceiling: float) -> None:
-    # Measured at T=12 (10,000 trials): 22%, 41%, 54% without the split and 2.4%, 8.9%, 17.4% with it. The noisy
-    # baselines stay above 5% because p0 is estimated from 10 runs; the split only removes the T-fold growth.
     split = run_test_family_simulation(baseline_p, 12, trials=1500, alpha=0.05 / 12)
     unsplit = run_test_family_simulation(baseline_p, 12, trials=1500)
     assert split <= ceiling
