@@ -1,6 +1,7 @@
 """Writes the Clastogen summary into pytest's terminal report."""
 
 from collections import Counter
+from collections.abc import Sequence
 
 import pytest
 
@@ -10,6 +11,7 @@ from clastogen.models import (
     NOISY_BASELINE_RATE,
     BaselineRecord,
     ClastogenPluginState,
+    MutantExecution,
     MutantStatus,
     MutationSummary,
     RunPlan,
@@ -46,7 +48,6 @@ _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
 def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord], verbose: bool) -> None:
     """Writes one line for all stable baselines (one per test with -v) after the full list of flaky ones."""
     stable = [b for b in baselines if b.stable]
-    # Errored baselines are reported on their mutants' ERROR and SKIPPED rows.
     flaky = [b for b in baselines if not b.stable and not b.error]
     if flaky:
         title = f"Flaky tests (not mutated: baseline pass rate < {MIN_BASELINE_RATE:.0%})"
@@ -78,26 +79,35 @@ def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[
     )
 
 
+def _test_names(executions: Sequence[MutantExecution]) -> dict[str, str]:
+    """Maps each test id to its short name, or to the full id when two short names clash."""
+    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in executions}
+    clashes = {n for n, c in Counter(short.values()).items() if c > 1}
+    return {t: t if n in clashes else n for t, n in short.items()}
+
+
+def _run_details(r: MutantExecution, show_target: bool, verbose: bool) -> list[str]:
+    """The target (only with several targets), run count and, with -v, the LLR of one result."""
+    details = [r.target] if show_target else []
+    if r.sample_count is not None:
+        details.append(f"{r.sample_count} runs")
+    if verbose and r.llr is not None:
+        details.append(f"LLR={r.llr:+.2f}")
+    return details
+
+
 def _write_mutants(
-    terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary
+    terminalreporter: pytest.TerminalReporter, executions: Sequence[MutantExecution], summary: MutationSummary
 ) -> None:
+    """Prints one block per mutant in STATUS_LABELS order: status line, description and the assertion that would kill it."""
     verbose = terminalreporter.config.get_verbosity() > 0
     order = list(STATUS_LABELS)
     show_target = len({r.target for r in summary.results}) > 1
-    # A test is named without its file path unless another file has a test with the same name.
-    short = {e.test_id: e.test_id.split("::", 1)[-1] for e in state.executions}
-    clashes = {n for n, c in Counter(short.values()).items() if c > 1}
-    name = {t: t if n in clashes else n for t, n in short.items()}
-    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(state.executions).items()}
+    name = _test_names(executions)
+    passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(executions).items()}
 
     for r in sorted(summary.results, key=lambda r: order.index(r.status)):
-        details = [f"[{r.mutant_id}]"]
-        if show_target:
-            details.append(r.target)
-        if r.sample_count is not None:
-            details.append(f"{r.sample_count} runs")
-        if verbose and r.llr is not None:
-            details.append(f"LLR={r.llr:+.2f}")
+        details = [f"[{r.mutant_id}]", *_run_details(r, show_target, verbose)]
         if r.status == MutantStatus.KILLED:
             details.append(f"by {name[r.test_id]}")
         if r.status == MutantStatus.SURVIVED:
@@ -130,7 +140,6 @@ def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSum
         _write_capped(
             terminalreporter, [f"{rule_line(r)}  {_clip(r.rule, 60)}" for r in weakest_first(summary.rules)], verbose
         )
-        # A rule whose only mutant is a suppressed custom one is untested by choice, so max_mutants would not help.
         suppressed = [
             r for r in summary.results if r.operator_name == CUSTOM_OPERATOR and r.status == MutantStatus.SUPPRESSED
         ]
@@ -168,7 +177,7 @@ def _write_summary(
 ) -> None:
     verbose = terminalreporter.config.get_verbosity() > 0
     terminalreporter.write_sep("=", "Clastogen Mutation Testing Summary", bold=True)
-    _write_mutants(terminalreporter, state, summary)
+    _write_mutants(terminalreporter, state.executions, summary)
     _write_baselines(terminalreporter, state.baselines, verbose)
 
     survived = summary.counts[MutantStatus.SURVIVED]
@@ -194,7 +203,6 @@ def _write_summary(
             yellow=True,
         )
 
-    # Without --clastogen-fail-under, any measured blind spot (score below 100%) shows red and N/A has no colour.
     if fail_under is None:
         ok = None if summary.score is None else summary.score == 100.0
     else:
@@ -229,37 +237,44 @@ def write_preview(terminalreporter: pytest.TerminalReporter, plans: list[RunPlan
     terminalreporter.write_sep("=", bold=True)
 
 
-def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary) -> None:
-    """Writes the summary of a --clastogen session, or the reason there is none."""
-    config = terminalreporter.config
-    raw_fail_under = config.getoption("--clastogen-fail-under", None)
-    fail_under = None if raw_fail_under is None else float(raw_fail_under)
-    empty = summary.total == 0 and all(b.stable for b in state.baselines)
-    if not empty:
-        _write_summary(terminalreporter, state, summary, fail_under)
-    elif state.marked_tests_count > 0:
-        if state.oracle:
-            hint = " Probes labelled mutants, but no suite test measured them."
-        elif config.getoption("--clastogen-oracle", False):
-            hint = ""
-        else:
-            hint = " Tests with oracle_samples are probes and run only with --clastogen-oracle."
-        terminalreporter.write_line(
-            f"Clastogen: 0 mutants generated across marked tests (check prompt constraints).{hint}"
-        )
-    else:
-        terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
-    if not empty:
-        terminalreporter.write_sep("=", bold=True)
-    # A subset of tests or a small max_mutants legitimately leaves entries unmatched, so this only warns.
+def _write_unused(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState) -> None:
+    """Warns about suppressions and custom mutants that matched nothing in this run."""
+    if state.marked_tests_count == 0:
+        return
     unused = sorted(state.suppressed_mutants - {e.mutant_id for e in state.executions})
-    if unused and state.marked_tests_count > 0:
+    if unused:
         terminalreporter.write_line(
             f"Suppressions matching no mutant in this run: {', '.join(unused)} (stale ID, or filtered out)", yellow=True
         )
     unused_targets = sorted({c.target for c in state.custom_mutants} - state.measured_targets)
-    if unused_targets and state.marked_tests_count > 0:
+    if unused_targets:
         terminalreporter.write_line(
             f"Custom mutants for targets no test measured in this run: {', '.join(unused_targets)} (no marked test, or filtered out)",
             yellow=True,
         )
+
+
+def _write_nothing_to_report(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState) -> None:
+    config = terminalreporter.config
+    if state.marked_tests_count == 0:
+        terminalreporter.write_line("Clastogen: No @pytest.mark.clastogen tests executed.")
+        return
+    if state.oracle:
+        hint = " Probes labelled mutants, but no suite test measured them."
+    elif config.getoption("--clastogen-oracle", False):
+        hint = ""
+    else:
+        hint = " Tests with oracle_samples are probes and run only with --clastogen-oracle."
+    terminalreporter.write_line(f"Clastogen: 0 mutants generated across marked tests (check prompt constraints).{hint}")
+
+
+def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary) -> None:
+    """Writes the summary of a --clastogen session, or the reason there is none."""
+    raw_fail_under = terminalreporter.config.getoption("--clastogen-fail-under", None)
+    fail_under = None if raw_fail_under is None else float(raw_fail_under)
+    if summary.total == 0 and all(b.stable for b in state.baselines):
+        _write_nothing_to_report(terminalreporter, state)
+    else:
+        _write_summary(terminalreporter, state, summary, fail_under)
+        terminalreporter.write_sep("=", bold=True)
+    _write_unused(terminalreporter, state)

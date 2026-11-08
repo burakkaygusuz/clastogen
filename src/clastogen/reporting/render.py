@@ -23,7 +23,6 @@ from clastogen.reporting.scoring import (
     weakest_first,
 )
 
-# Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
     MutantStatus.SURVIVED: "✗ SURVIVED",
     MutantStatus.INCONCLUSIVE: "? INCONCLUSIVE",
@@ -44,7 +43,6 @@ _COLORS = {
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
 
-# The assertion that kills a survivor of each operator. skills/clastogen/SKILL.md documents the same table.
 KILL_HINTS = {
     "delete_constraint": "The agent obeys the rule for an input that needs the rule.",
     "invert_negation": "The agent refuses the action or does the action that the rule names.",
@@ -101,7 +99,7 @@ def _donut(summary: MutationSummary) -> str:
     """Status distribution as SVG circle segments; r=15.915 makes the circumference 100 so dash lengths are percents."""
     arcs: list[str] = []
     legend: list[str] = []
-    offset = 25.0  # starts the first segment at 12 o'clock
+    offset = 25.0
     for s, n in summary.counts.items():
         pct = n / summary.total * 100 if summary.total else 0.0
         if not n:
@@ -191,7 +189,6 @@ def _results_table(
 ) -> str:
     if not results:
         return '<p class="empty">No mutants were evaluated.</p>'
-    # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
     passed_in = survivor_tests(executions)
 
     def _behavior(mutant_id: str) -> str:
@@ -284,7 +281,6 @@ def render_html(
 
 
 def _code(text: str) -> str:
-    # Prompt text is untrusted: a code span renders it literally, with no HTML, links or @mentions in a PR comment.
     text = " ".join(text.split()).replace("|", "\\|")
     fence = "`" * (max(map(len, re.findall("`+", text)), default=0) + 1)
     return f"{fence} {text} {fence}"

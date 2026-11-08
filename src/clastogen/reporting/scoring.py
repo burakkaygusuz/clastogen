@@ -14,7 +14,16 @@ from clastogen.models import (
 )
 from clastogen.stats.assertions import compute_wilson_interval
 
-_RANK = {status: rank for rank, status in enumerate(MutantStatus)}
+_PRECEDENCE = (
+    MutantStatus.KILLED,
+    MutantStatus.SURVIVED,
+    MutantStatus.INCONCLUSIVE,
+    MutantStatus.ERROR,
+    MutantStatus.SKIPPED,
+    MutantStatus.UNMEASURED,
+    MutantStatus.SUPPRESSED,
+)
+_RANK = {status: rank for rank, status in enumerate(_PRECEDENCE)}
 MEASURED = frozenset({MutantStatus.KILLED, MutantStatus.SURVIVED, MutantStatus.INCONCLUSIVE})
 
 
@@ -25,7 +34,6 @@ def _rule_coverage(
     measured = [r for r in unique if r.status in MEASURED]
     rows = []
     for target, rule in sorted(set(constraints)):
-        # A custom mutant counts for every rule its original snippet equals, sits inside or contains.
         mutants = [
             r
             for r in measured
@@ -127,7 +135,6 @@ def behavior_label(summary: MutationSummary, mutant_id: str) -> str | None:
     return {"changed": "behavior changed", "suspected": "behavior suspected"}.get(label, "no behavior change found")
 
 
-# (probe label, killed) -> exposure bucket; suspected ignores the kill status, and a mutant no probe labelled is absent.
 _QUADRANT = {
     ("changed", True): "caught",
     ("changed", False): "blind_spots",

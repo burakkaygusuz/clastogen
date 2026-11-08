@@ -141,7 +141,6 @@ executions = st.builds(
 )
 
 
-# A test evaluates each mutant at most once, so (mutant_id, test_id) is unique within a session.
 @given(
     st.lists(executions, max_size=12, unique_by=lambda r: (r.mutant_id, r.test_id)),
     st.randoms(use_true_random=False),
@@ -264,3 +263,31 @@ def test_score_line_lists_every_unscored_status() -> None:
     )
 
     assert "; not scored: 1 error, 1 unmeasured)" in score_line(summary)
+
+
+def test_every_status_keyed_table_covers_every_status() -> None:
+    from clastogen.reporting import render, scoring, terminal
+
+    tables = {
+        "STATUS_LABELS": render.STATUS_LABELS,
+        "_COLORS": render._COLORS,
+        "_STATUS_MARKUP": terminal._STATUS_MARKUP,
+        "_RANK": scoring._RANK,
+    }
+    missing = {name: set(MutantStatus) - set(table) for name, table in tables.items()}
+    assert {name: gone for name, gone in missing.items() if gone} == {}
+    assert len(scoring._PRECEDENCE) == len(MutantStatus)
+
+
+def test_status_labels_list_blind_spots_first_then_kills_then_excluded_mutants() -> None:
+    from clastogen.reporting import render
+
+    assert list(render.STATUS_LABELS) == [
+        MutantStatus.SURVIVED,
+        MutantStatus.INCONCLUSIVE,
+        MutantStatus.ERROR,
+        MutantStatus.KILLED,
+        MutantStatus.SKIPPED,
+        MutantStatus.UNMEASURED,
+        MutantStatus.SUPPRESSED,
+    ]
