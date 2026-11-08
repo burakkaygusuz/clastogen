@@ -20,14 +20,14 @@ from clastogen.models import (
     OracleRecord,
     RecordsPayload,
     RunPlan,
-    SPRTConfig,
-    TrialBudget,
 )
 from clastogen.mutation.http_hook import rewrite_requests
 from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
+from clastogen.stats.types import SPRTConfig
+from clastogen.trial import TrialBudget
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +246,6 @@ def run_mutation(
 
     Records newly killed mutants in state so later tests skip them.
     """
-    # Bonferroni: an unchanged mutant faces every test of the target, and any one kill counts, so each SPRT gets alpha / T.
     params = replace(params, alpha=params.alpha / state.tests.get(params.target, 1))
     mutator = PromptMutator(params.target, state.custom_mutants)
     constraints = [[params.target, rule] for rule in mutator.extract_candidate_rules(prompt_text)]
@@ -259,7 +258,6 @@ def run_mutation(
     if not pending:
         return MutationRun([], executions, constraints, unmutated)
 
-    # The test starts only when at least one mutant can be funded after it.
     if not state.budget.fits(_baseline_calls(params) + params.max_steps):
         unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
         return MutationRun([], executions + unmeasured, constraints, unmutated)
@@ -290,58 +288,65 @@ def run_mutation(
     )
 
 
+def _sample(test_id: str, trial: Callable[[], bool], samples: int, mutant: Mutant | None = None) -> list[bool] | None:
+    """Runs the trial samples times, on the mutant's prompt if given; None when it cannot be measured."""
+    try:
+        with ExitStack() as stack:
+            if mutant:
+                _inject(stack, mutant.target_symbol, mutant.mutated_prompt)
+            return [trial() for _ in range(samples)]
+    except (TrialSkipped, TrialError) as exc:
+        where = f" on mutant [{mutant.id}]" if mutant else ""
+        logger.warning("Probe '%s' not measured%s: %s", test_id, where, exc)
+        return None
+
+
+def _label(baseline_passes: int, candidate_passes: int, samples: int, params: ClastogenParams) -> Behavior:
+    """Classifies a mutant from probe counts: changed on a significant drop of at least delta, suspected when the bound cannot rule one out."""
+    res = compare_pass_counts(baseline_passes, candidate_passes, samples, confidence=1 - params.alpha)
+    threshold = params.delta - 1e-9
+    if res.regressed and res.baseline_rate - res.candidate_rate >= threshold:
+        return "changed"
+    if drop_upper_bound(baseline_passes, candidate_passes, samples, params.alpha) >= threshold:
+        return "suspected"
+    return "no_change_found"
+
+
 def run_oracle(
     test_id: str,
     trial: Callable[[], bool],
     params: ClastogenParams,
     samples: int,
     prompt_text: str,
-    suppressed: set[str],
-    budget: TrialBudget,
-    custom: Sequence[CustomMutant],
+    state: ClastogenPluginState,
 ) -> list[OracleRecord]:
     """Runs a probe on the original prompt and on every unsuppressed mutant; a mutant it cannot measure gets no record.
 
     Mutants another test already killed are labelled too, and every probe is judged alone at its own alpha, so adding
     a probe never lowers a label. A drop the test is too weak to call is suspected, not unchanged.
     """
-    mutants = PromptMutator(params.target, custom).generate_mutants(prompt_text, params.max_mutants)
-    mutants = [m for m in mutants if m.id not in suppressed]
+    mutants = PromptMutator(params.target, state.custom_mutants).generate_mutants(prompt_text, params.max_mutants)
+    mutants = [m for m in mutants if m.id not in state.suppressed_mutants]
     if not mutants:
         return []
-    if not budget.fits(2 * samples):
+    if not state.budget.fits(2 * samples):
         logger.warning("Probe '%s' not measured: %s", test_id, _BUDGET_EXHAUSTED)
         return []
-    try:
-        baseline = [trial() for _ in range(samples)]
-    except (TrialSkipped, TrialError) as exc:
-        logger.warning("Probe '%s' not measured: %s", test_id, exc)
+    baseline = _sample(test_id, trial, samples)
+    if baseline is None:
         return []
-    if sum(baseline) / samples < MIN_BASELINE_RATE:
-        logger.warning("Probe '%s' is flaky (%d/%d passed), not measured.", test_id, sum(baseline), samples)
+    baseline_passes = sum(baseline)
+    if baseline_passes / samples < MIN_BASELINE_RATE:
+        logger.warning("Probe '%s' is flaky (%d/%d passed), not measured.", test_id, baseline_passes, samples)
         return []
 
     records: list[OracleRecord] = []
     for mutant in mutants:
-        if not budget.fits(samples):
+        if not state.budget.fits(samples):
             logger.warning("Probe '%s' not measured on mutant [%s]: %s", test_id, mutant.id, _BUDGET_EXHAUSTED)
             continue
-        try:
-            with ExitStack() as stack:
-                _inject(stack, mutant.target_symbol, mutant.mutated_prompt)
-                candidate = [trial() for _ in range(samples)]
-        except (TrialSkipped, TrialError) as exc:
-            logger.warning("Probe '%s' not measured on mutant [%s]: %s", test_id, mutant.id, exc)
-            continue
-        res = compare_pass_counts(sum(baseline), sum(candidate), samples, confidence=1 - params.alpha)
-        drop = res.baseline_rate - res.candidate_rate
-        # The tolerance keeps a drop of exactly delta (e.g. 1.0 - 0.8 vs 0.2) from failing on float rounding.
-        label: Behavior = "no_change_found"
-        if res.regressed and drop >= params.delta - 1e-9:
-            label = "changed"
-        elif drop_upper_bound(sum(baseline), sum(candidate), samples, params.alpha) >= params.delta - 1e-9:
-            label = "suspected"
-        records.append(OracleRecord(mutant.id, label))
+        if (candidate := _sample(test_id, trial, samples, mutant)) is not None:
+            records.append(OracleRecord(mutant.id, _label(baseline_passes, sum(candidate), samples, params)))
     return records
 
 
@@ -354,7 +359,6 @@ def to_payload(
     tests: dict[str, int] | None = None,
     targets: Sequence[str] = (),
 ) -> RecordsPayload:
-    # execnet serializes only exact builtin types, so the StrEnum status becomes a plain str.
     return {
         "baselines": [asdict(b) for b in baselines],
         "executions": [{**asdict(r), "status": str(r.status)} for r in executions],

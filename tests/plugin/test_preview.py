@@ -4,7 +4,6 @@ import pytest
 
 from tests.plugin import AGENT
 
-# Each body appends to calls.log, so a line in it means the test ran (the original call or a mutant trial).
 _TESTS = """
 import pytest
 from pathlib import Path

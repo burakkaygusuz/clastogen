@@ -14,9 +14,9 @@ from clastogen.models import (
     ClastogenPluginState,
     MutantExecution,
     MutantStatus,
+    MutationSummary,
     OracleRecord,
     RecordsPayload,
-    TrialBudget,
 )
 from clastogen.mutation.injection import resolve_target
 from clastogen.mutation.mutator import PromptMutator
@@ -25,7 +25,7 @@ from clastogen.reporting.render import render_html, render_json, render_markdown
 from clastogen.reporting.scoring import below_threshold, summarize
 from clastogen.runner import plan_test, run_mutation, run_oracle, to_payload
 from clastogen.suppressions import load_suppressions
-from clastogen.trial import run_trial
+from clastogen.trial import TrialBudget, run_trial, soft_failed
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,6 @@ class _RecordCollector:
         for key, payload in report.user_properties:
             if key != _RECORDS_KEY:
                 continue
-            # Only pytest_runtest_call attaches this key, always with a RecordsPayload.
             records = cast(RecordsPayload, payload)
             self._state.marked_tests_count += 1
             self._state.constraints.update((target, rule) for target, rule in records["constraints"])
@@ -105,18 +104,50 @@ class _RecordCollector:
                 self._state.executions.append(MutantExecution(**fields))
 
 
+def _fail_on_ignored_clastogen_dirs(directories: set[Path], rootpath: Path) -> None:
+    """Raises when a directory other than the rootdir holds a .clastogen/, which Clastogen would ignore silently."""
+    for directory in sorted(directories):
+        if directory.resolve() != rootpath.resolve() and (directory / ".clastogen").is_dir():
+            raise pytest.UsageError(
+                f"'{directory / '.clastogen'}' is ignored: Clastogen reads .clastogen/ only from the pytest rootdir '{rootpath}'. "
+                "Move it there or set the rootdir (--rootdir, or an ini file in the project root)."
+            )
+
+
+def _check_clastogen_dir(config: pytest.Config) -> None:
+    """Checks the invocation directory and the directory of each path argument for an ignored .clastogen/."""
+    invoked = config.invocation_params.dir
+    dirs = {invoked}
+    for arg in config.args:
+        path = invoked / arg.partition("::")[0]
+        dirs.add(path if path.is_dir() else path.parent)
+    _fail_on_ignored_clastogen_dirs(dirs, config.rootpath)
+
+
+def _check_nested_clastogen_dirs(config: pytest.Config, test_dirs: set[Path]) -> None:
+    """Checks each test directory, and every directory above it up to the rootdir, for an ignored .clastogen/."""
+    rootpath = config.rootpath.resolve()
+    nested: set[Path] = set()
+    for directory in (d.resolve() for d in test_dirs):
+        if rootpath in directory.parents:
+            nested.update((directory, *directory.parents[: directory.parents.index(rootpath)]))
+    _fail_on_ignored_clastogen_dirs(nested, rootpath)
+
+
 def pytest_configure(config: pytest.Config) -> None:
+    """Registers the marker and builds the plugin state: suppressions, custom mutants and the call budget, split across xdist workers."""
     config.addinivalue_line(
         "markers",
         "clastogen(target, max_mutants=5, delta=0.30, p0=None, max_steps=20, alpha=0.05, beta=0.10, oracle_samples=None): Run Clastogen on target prompt; oracle_samples=N makes the test a behavior probe.",
     )
     enabled = config.getoption("--clastogen")
+    if enabled:
+        _check_clastogen_dir(config)
     suppressed = load_suppressions(config.rootpath) if enabled else set()
     custom = load_custom_mutants(config.rootpath) if enabled else ()
     limit: int | None = config.getoption("--clastogen-max-calls", None)
     if limit is not None and limit < 1:
         raise pytest.UsageError(f"--clastogen-max-calls must be at least 1, got {limit}")
-    # Checked on the controller, which knows the worker count before any worker starts; a worker would get 0 calls.
     workers = len(config.getoption("tx", ()))
     if limit is not None and workers > limit:
         raise pytest.UsageError(f"--clastogen-max-calls {limit} is below the {workers} xdist workers; each needs one")
@@ -161,9 +192,13 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         return res
 
     marker = item.get_closest_marker("clastogen")
-    if not marker:
+    if not marker or soft_failed():
         return res
 
+    if isinstance(item, pytest.Function) and "subtests" in item.fixturenames:
+        raise pytest.UsageError(
+            f"Test '{item.nodeid}' uses the subtests fixture, which Clastogen cannot rerun as a trial."
+        )
     params, prompt_text = _parse_marker(item, marker)
     state = item.config.stash[STATE_KEY]
     trial = state.budget.wrap(partial(run_trial, item))
@@ -171,16 +206,7 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
         oracle = []
         oracle_ran = item.config.getoption("--clastogen-oracle", False)
         if oracle_ran:
-            oracle = run_oracle(
-                item.nodeid,
-                trial,
-                params,
-                samples,
-                prompt_text,
-                state.suppressed_mutants,
-                state.budget,
-                state.custom_mutants,
-            )
+            oracle = run_oracle(item.nodeid, trial, params, samples, prompt_text, state)
         item.user_properties.append(
             (_RECORDS_KEY, to_payload(oracle=oracle, targets=[params.target] if oracle_ran else []))
         )
@@ -200,8 +226,15 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
 
 
 @pytest.hookimpl(optionalhook=True)
-def pytest_configure_node(node) -> None:  # noqa: ANN001  # xdist WorkerController, xdist is optional
+def pytest_configure_node(node) -> None:  # noqa: ANN001
     node.workerinput["clastogen_repeats"] = node.workerinput["workercount"] if node.config.option.dist == "each" else 1
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_node_collection_finished(node, ids: list[str]) -> None:  # noqa: ANN001
+    config = node.config
+    if config.getoption("--clastogen", False):
+        _check_nested_clastogen_dirs(config, {(config.rootpath / nodeid.partition("::")[0]).parent for nodeid in ids})
 
 
 def _check_custom_mutants(session: pytest.Session, state: ClastogenPluginState) -> None:
@@ -220,7 +253,7 @@ def _check_custom_mutants(session: pytest.Session, state: ClastogenPluginState) 
         try:
             params, prompt_text = _parse_marker(item, marker)
         except pytest.UsageError:
-            continue  # reported when the test runs
+            continue
         if params.target in seen:
             continue
         seen.add(params.target)
@@ -230,17 +263,8 @@ def _check_custom_mutants(session: pytest.Session, state: ClastogenPluginState) 
             raise pytest.UsageError(f"{exc} (.clastogen/mutants.toml, used by '{item.nodeid}')") from exc
 
 
-def pytest_collection_finish(session: pytest.Session) -> None:
-    """Counts the tests per target after every deselection (-k, --lf), and under --collect-only previews the run."""
-    config = session.config
-    if not config.getoption("--clastogen", False):
-        return
-
-    state = config.stash[STATE_KEY]
-    # Probes get no SPRT verdict, so they are not part of the family. Every worker collects every selected test,
-    # so each counts the whole family; with --dist each a worker runs all of them again, so the family grows by the
-    # worker count (the controller says so in workerinput).
-    repeats = getattr(config, "workerinput", {}).get("clastogen_repeats", 1)
+def _count_tests(session: pytest.Session, state: ClastogenPluginState) -> None:
+    repeats = getattr(session.config, "workerinput", {}).get("clastogen_repeats", 1)
     for item in session.items:
         if marker := item.get_closest_marker("clastogen"):
             try:
@@ -249,23 +273,49 @@ def pytest_collection_finish(session: pytest.Session) -> None:
                 continue
             if params.oracle_samples is None:
                 state.tests[params.target] = state.tests.get(params.target, 0) + repeats
+
+
+def _collect_preview(session: pytest.Session, state: ClastogenPluginState) -> None:
+    with_oracle = session.config.getoption("--clastogen-oracle", False)
+    for item in session.items:
+        if marker := item.get_closest_marker("clastogen"):
+            params, prompt_text = _parse_marker(item, marker)
+            state.preview.append(
+                plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle, state.custom_mutants)
+            )
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Counts the tests per target after every deselection (-k, --lf), and under --collect-only previews the run."""
+    config = session.config
+    if not config.getoption("--clastogen", False):
+        return
+
+    state = config.stash[STATE_KEY]
+    _count_tests(session, state)
+    if not _is_xdist_worker(config):
+        _check_nested_clastogen_dirs(config, {item.path.parent for item in session.items})
     _check_custom_mutants(session, state)
     if config.option.collectonly:
-        with_oracle = config.getoption("--clastogen-oracle", False)
-        for item in session.items:
-            if marker := item.get_closest_marker("clastogen"):
-                params, prompt_text = _parse_marker(item, marker)
-                state.preview.append(
-                    plan_test(
-                        item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle, state.custom_mutants
-                    )
-                )
+        _collect_preview(session, state)
 
 
 def _write_report(path: str, text: str) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
+
+
+def _failure_message(summary: MutationSummary, fail_under: float | None) -> str | None:
+    """The first of: fail-under missed, mutant errors, unmeasured mutants (the last only with fail-under); None when none."""
+    if fail_under is not None and below_threshold(summary, float(fail_under)):
+        detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
+        return f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
+    if errors := summary.counts[MutantStatus.ERROR]:
+        return f"Clastogen: {errors} mutant error(s)"
+    if fail_under is not None and (unmeasured := summary.counts[MutantStatus.UNMEASURED]):
+        return f"Clastogen: {unmeasured} mutant(s) unmeasured within --clastogen-max-calls"
+    return None
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -285,36 +335,20 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated, state.tests)
     state.summary = summary
 
-    json_path = session.config.getoption("--clastogen-json", None)
-    if json_path:
-        _write_report(json_path, render_json(summary, state.executions, state.baselines))
+    for option, render in (
+        ("--clastogen-json", render_json),
+        ("--clastogen-html", render_html),
+        ("--clastogen-md", render_markdown),
+    ):
+        if path := session.config.getoption(option, None):
+            _write_report(path, render(summary, state.executions, state.baselines))
 
-    html_path = session.config.getoption("--clastogen-html", None)
-    if html_path:
-        _write_report(html_path, render_html(summary, state.executions, state.baselines))
-
-    md_path = session.config.getoption("--clastogen-md", None)
-    if md_path:
-        _write_report(md_path, render_markdown(summary, state.executions, state.baselines))
-
-    fail_under = session.config.getoption("--clastogen-fail-under", None)
-    # Errored mutants drop out of the score, so they fail the run instead of inflating it.
-    mutant_errors = summary.counts[MutantStatus.ERROR]
-    errored = mutant_errors > 0
-    fail_under_failed = fail_under is not None and below_threshold(summary, float(fail_under))
-    # Unmeasured mutants fail the run only when a score threshold was asked for; without one, the budget is the user's choice.
-    unmeasured = summary.counts[MutantStatus.UNMEASURED] if fail_under is not None else 0
-    if session.exitstatus == pytest.ExitCode.OK and (fail_under_failed or errored or unmeasured):
+    message = _failure_message(summary, session.config.getoption("--clastogen-fail-under", None))
+    if message is None:
+        return
+    if session.exitstatus == pytest.ExitCode.OK:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
-    if fail_under_failed and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
-        # pytest prints shouldfail in red just above its final "N passed" line; keep a reason it already set (-x).
-        detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
-        message = f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
-    elif errored and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
-        message = f"Clastogen: {mutant_errors} mutant error(s)"
-    elif unmeasured and session.exitstatus == pytest.ExitCode.TESTS_FAILED:
-        message = f"Clastogen: {unmeasured} mutant(s) unmeasured within --clastogen-max-calls"
-    else:
+    if session.exitstatus != pytest.ExitCode.TESTS_FAILED:
         return
     prev = session.shouldfail
     session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message

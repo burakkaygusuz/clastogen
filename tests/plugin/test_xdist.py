@@ -30,5 +30,4 @@ def test_parallel_workers_reach_the_same_verdicts_as_a_serial_run(
     assert runs["parallel"]["unmutated_sentences"] == runs["serial"]["unmutated_sentences"]
     assert runs["parallel"]["by_operator"] == runs["serial"]["by_operator"]
     assert runs["parallel"]["mutation_score"] == runs["serial"]["mutation_score"] == 100.0
-    # The serial run skips mutants that the strong test killed; each worker only knows its own kills.
     assert runs["serial"]["calls"] < runs["parallel"]["calls"]

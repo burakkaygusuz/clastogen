@@ -118,7 +118,6 @@ def test_canary_trials_count_against_the_budget_with_p0_given(
     pytester.runpytest("--clastogen", f"--clastogen-max-calls={cap}", f"--clastogen-json={json_out}")
 
     log = pytester.path / "calls.log"
-    # The log holds the original call plus every trial, and the canary runs only when its 3 trials still fit after the mutants.
     assert (max(log.stat().st_size - 1, 0) if log.exists() else 0) == trials <= cap
     counts = json.loads(json_out.read_text(encoding="utf-8"))["counts"]
     assert (counts["SURVIVED"] + counts["INCONCLUSIVE"], counts["UNMEASURED"]) == (unproven, unmeasured)

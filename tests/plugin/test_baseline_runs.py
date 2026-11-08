@@ -65,7 +65,6 @@ def test_broken_baseline_is_rejected_with_reason(
     result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
 
     result.assert_outcomes(passed=1)
-    # The baseline error lands on the unmeasured mutants: ERROR fails the run, SKIPPED does not.
     assert result.ret == (pytest.ExitCode.TESTS_FAILED if mutant_error else pytest.ExitCode.OK), result.stdout.str()
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (baseline,) = data["baselines"]
@@ -107,7 +106,6 @@ def test_kills():
     )
     result = pytester.runpytest("--clastogen", *files)
 
-    # test_a kills every mutant whose baseline broke in test_b, whichever runs first.
     assert result.ret == pytest.ExitCode.OK, result.stdout.str()
     result.stdout.fnmatch_lines(["*Mutation Score: 100.0% (1 of 1 killed)*"])
 

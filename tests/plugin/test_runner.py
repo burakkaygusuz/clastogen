@@ -7,8 +7,9 @@ import httpx
 import pytest
 
 from clastogen.exceptions import TrialError, TrialSkipped
-from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
+from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus
 from clastogen.runner import _canary_passes, measure_baseline, run_mutation, run_oracle
+from clastogen.trial import TrialBudget
 
 PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
 TARGET = f"{__name__}:PROMPT"
@@ -80,11 +81,10 @@ def test_alpha_is_divided_by_the_tests_of_the_target() -> None:
 
     executions = run_mutation(TEST_ID, lambda: original == PROMPT, _params(), PROMPT, state).executions
 
-    # A 10/10 baseline kills an always-failing mutant in 2 calls at alpha 0.05 and in 4 at 0.05 / 12.
     assert {e.sample_count for e in executions} == {4}
 
 
-COPY = PROMPT  # a copy made at import time, which the attribute replacement cannot reach
+COPY = PROMPT
 
 
 def _http_guard() -> bool:
@@ -138,14 +138,17 @@ def test_run_mutation_marks_suppressed_mutants_without_running_them() -> None:
 
 
 def test_oracle_labels_a_mutant_that_changes_the_probe() -> None:
-    records = run_oracle(TEST_ID, _guard, _params(oracle_samples=10), 10, PROMPT, set(), TrialBudget(), ())
+    records = run_oracle(TEST_ID, _guard, _params(oracle_samples=10), 10, PROMPT, ClastogenPluginState())
 
     assert records
     assert {r.label for r in records} == {"changed"}
 
 
 def test_probe_records_nothing_when_its_sample_set_does_not_fit_the_budget() -> None:
-    assert run_oracle(TEST_ID, _guard, _params(oracle_samples=10), 10, PROMPT, set(), TrialBudget(9), ()) == []
+    assert (
+        run_oracle(TEST_ID, _guard, _params(oracle_samples=10), 10, PROMPT, ClastogenPluginState(budget=TrialBudget(9)))
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -154,4 +157,4 @@ def test_probe_records_nothing_when_its_sample_set_does_not_fit_the_budget() -> 
     ids=["skipped", "error", "flaky"],
 )
 def test_oracle_measures_nothing_when_the_probe_itself_is_broken_or_flaky(trial: Callable[[], bool]) -> None:
-    assert run_oracle(TEST_ID, trial, _params(oracle_samples=10), 10, PROMPT, set(), TrialBudget(), ()) == []
+    assert run_oracle(TEST_ID, trial, _params(oracle_samples=10), 10, PROMPT, ClastogenPluginState()) == []

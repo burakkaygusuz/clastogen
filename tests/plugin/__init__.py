@@ -9,8 +9,6 @@ def ask():
     return PROMPT.lower()
 '''
 
-# The suite test kills both mutants; the probe only watches the refund rule, so the identity mutant is killed
-# without a behavior change found.
 STRONG = """
 import pytest, agent
 

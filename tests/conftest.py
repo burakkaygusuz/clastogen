@@ -22,7 +22,6 @@ import clastogen.trial
 
 pytest_plugins = ["pytester"]
 
-# The plugin loads via the pytest11 entry point before pytest-cov starts; reload so module-level lines are measured.
 for mod in [
     clastogen.exceptions,
     clastogen.models,

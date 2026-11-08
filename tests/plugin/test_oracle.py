@@ -73,7 +73,6 @@ def test_surviving_mutants_split_into_blind_spots_and_no_change_found(pytester: 
 def test_a_probe_rules_out_a_drop_only_with_enough_samples(
     pytester: pytest.Pytester, samples: int, label: str, phrase: str
 ) -> None:
-    # All passes on both sides: the upper bound of the drop is 0.311 at 6 samples (>= delta) and 0.279 at 7.
     probe = NOOP_PROBE.replace("oracle_samples=20", f"oracle_samples={samples}")
     stdout, data = _run(pytester, WEAK, probe)
     check.equal(set(data["behavior"]["labels"].values()), {label})
@@ -148,7 +147,6 @@ TROUBLES = ["raise KeyError('boom')", "pytest.skip('cannot run')"]
 def test_a_probe_that_cannot_rerun_on_the_original_prompt_is_not_measured(
     pytester: pytest.Pytester, trouble: str
 ) -> None:
-    # The first call is the probe's own plain run; every rerun after it hits the trouble.
     probe = f"""
 import itertools
 _n = itertools.count(1)
@@ -160,7 +158,7 @@ def test_troubled_probe():
     assert agent.PROMPT
 """
     stdout, data = _run(pytester, WEAK, probe)
-    check.is_in("2 passed", stdout)  # the trouble is a warning, never a failure of the probe itself
+    check.is_in("2 passed", stdout)
     check.is_not_in("behavior", data)
 
 
@@ -175,6 +173,5 @@ def test_troubled_probe():
 """
     stdout, data = _run(pytester, WEAK, probe)
     check.is_in("2 passed", stdout)
-    # Only the mutant that leaves the refund rule alone is measured; the other one is unlabelled.
     check.equal(len(data["behavior"]["labels"]), 1)
     check.equal(data["behavior"]["unlabelled"], 1)

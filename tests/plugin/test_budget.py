@@ -6,7 +6,6 @@ import pytest
 
 from tests.plugin import AGENT
 
-# Each run of the test body appends one byte to calls.log: the original call plus every trial.
 _TEST = """
 import pytest, agent
 from pathlib import Path
@@ -85,7 +84,6 @@ def test_xdist_gives_each_worker_a_share_of_the_cap(pytester: pytest.Pytester, s
     result = pytester.runpytest_subprocess(*args)
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert result.ret == pytest.ExitCode.OK, result.stdout.str()
-    # The serial run with 14 spends 11 trials; the one busy worker gets 7, which cannot fund the 9 baseline runs.
     assert _trials(pytester) == 0
     assert data["counts"]["UNMEASURED"] == 2
 

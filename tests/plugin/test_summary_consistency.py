@@ -33,7 +33,6 @@ def test_survived_does_not_mask_killed_regardless_of_order(pytester: pytest.Pyte
     check.equal(data["counts"]["KILLED"], 2)
     check.equal(data["counts"]["SURVIVED"], 0)
     check.equal(data["mutation_score"], 100.0)
-    # The canary ERROR of test_unrelated yields to the kill by test_strong, so the run stays green.
     check.equal(data["counts"]["ERROR"], 0)
     check.equal(result.ret, pytest.ExitCode.OK)
 
