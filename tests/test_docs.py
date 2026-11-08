@@ -16,7 +16,6 @@ REPO = Path(__file__).resolve().parents[1]
 STATISTICS = (REPO / "docs" / "statistics.md").read_text(encoding="utf-8")
 GUIDE = (REPO / "docs" / "guide.md").read_text(encoding="utf-8")
 SKILL = (REPO / "skills" / "clastogen" / "SKILL.md").read_text(encoding="utf-8")
-# One rule of each kind: modal, negation, threshold, exception, comparator, scope, plus a section and an example.
 ALL_OPERATORS_PROMPT = """You are a support agent for an online store. You answer questions about orders, shipping, returns and refunds for registered customers, and you hand off anything else to a person.
 
 ## Refunds
@@ -71,7 +70,6 @@ def test_demo_reports_documented_score(tmp_path: Path, pytester: pytest.Pytester
     check.almost_equal(low, 23.07, abs=0.01)
     check.almost_equal(high, 88.23, abs=0.01)
     check.is_in("Wilson 95% CI 23.1%-88.2%", out)
-    # Only the two survivors get a hint, in the terminal and in the Markdown report.
     hint = "Assert: Use a value between the old limit and the new limit"
     check.equal(out.count("Assert:"), 2)
     check.is_in(hint, out)
