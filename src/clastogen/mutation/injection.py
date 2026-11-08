@@ -25,8 +25,11 @@ def resolve_target(target_spec: str) -> tuple[object, str]:
 
 
 def _aliasing_modules(owner: object, attr: str, original: object) -> list[types.ModuleType]:
-    """Modules other than owner that bound the same string under the same name, e.g. via `from agent import PROMPT`."""
-    if not isinstance(original, str):
+    """Modules other than owner that bound the same non-empty string object under the same name, e.g. via `from agent import PROMPT`.
+
+    Identity, not equality: an equal copy in another module (`PROMPT = agent.PROMPT.strip()`) may be an unrelated prompt, so it is not patched.
+    """
+    if not isinstance(original, str) or not original:
         return []
     return [
         mod

@@ -12,11 +12,10 @@ from unittest.mock import patch
 if TYPE_CHECKING:
     import httpx
 
-# httpx2 is the library of the Anthropic SDK 2.x; a client of one library is rejected by an SDK built on the other.
 _HTTP_LIBRARIES = ("httpx", "httpx2")
 _SYSTEM_ROLES = ("system", "developer")
-_SYSTEM_FIELDS = ("system", "instructions", "preamble")  # Anthropic and Bedrock, OpenAI Responses, Cohere v1
-_MESSAGE_LISTS = ("messages", "input")  # Chat Completions and Anthropic, Responses
+_SYSTEM_FIELDS = ("system", "instructions", "preamble")
+_MESSAGE_LISTS = ("messages", "input")
 _SIGV4 = "AWS4-HMAC-SHA256"
 
 
@@ -57,10 +56,10 @@ def _rewritten_body(body: dict[str, Any], original: str, mutated: str) -> dict[s
 def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Request:
     """Returns request with original replaced in its system positions, or request itself when nothing changes."""
     if request.headers.get("authorization", "").startswith(_SIGV4):
-        return request  # the signature covers the body, so a rewritten body would be rejected
+        return request
     try:
         body = json.loads(request.content)
-    except (ValueError, RuntimeError):  # bad JSON, or RequestNotRead (a RuntimeError)
+    except (ValueError, RuntimeError):
         return request
     if not isinstance(body, dict):
         return request
@@ -74,6 +73,7 @@ def _rewritten(request: httpx.Request, original: str, mutated: str) -> httpx.Req
 
 @contextmanager
 def _patch_send(http: ModuleType, original: str, mutated: str) -> Generator[None, None, None]:
+    """Routes every request of one HTTP library's Client.send and AsyncClient.send through _rewritten."""
     send, async_send = http.Client.send, http.AsyncClient.send
 
     def patched_send(self: httpx.Client, request: httpx.Request, **kwargs: object) -> httpx.Response:

@@ -37,7 +37,7 @@ def test_blocks_follow_heading_levels_fences_and_example_tags() -> None:
         ("example", '<example name="a">'),
     ]
     policy = find_blocks(PROMPT)[0]
-    assert PROMPT[policy.start : policy.end].endswith("polite to the customer.\n\n")  # subheading stays inside
+    assert PROMPT[policy.start : policy.end].endswith("polite to the customer.\n\n")
 
 
 def test_examples_wrapper_is_kept_and_its_children_are_blocks() -> None:
@@ -61,7 +61,7 @@ def test_delete_section_and_example_leave_balanced_tags_and_collapse_blank_lines
 def test_section_without_a_rule_and_block_over_half_the_prompt_are_not_mutated() -> None:
     ruleless = "# Greeting\nSay hello warmly to everyone.\n# Policy\nNever share account data with anyone else."
     ops = {m.operator_name for m in PromptMutator().generate_mutants(ruleless, max_mutants=9)}
-    assert "delete_section" not in ops  # Policy is over half of the prompt, Greeting holds no rule
+    assert "delete_section" not in ops
 
 
 def test_block_lane_is_reachable_at_a_small_budget() -> None:
@@ -86,7 +86,25 @@ def test_deep_nesting_fences_and_identical_blocks_are_handled() -> None:
 def test_pathological_whitespace_stays_fast_and_long_numbers_stay_exact() -> None:
     start = time.perf_counter()
     PromptMutator().generate_mutants("# x" + " " * 40_000 + "y\nYou must x" + " " * 40_000 + "y.", max_mutants=5)
-    assert time.perf_counter() - start < 5.0  # quadratic scanning would take minutes
+    assert time.perf_counter() - start < 5.0
 
     (m,) = PromptMutator().generate_mutants("You must send at most 123456789012345678901234567890123 items.", 1)
     assert "1234567890123456789012345678901230" in m.mutated_prompt
+
+
+def test_unclosed_tag_openers_are_scanned_in_linear_time() -> None:
+    start = time.perf_counter()
+    find_blocks("<a " * 20_000)
+    assert time.perf_counter() - start < 1.0
+
+
+def test_nested_same_name_tags_pair_by_depth() -> None:
+    prompt = "<rules>outer <rules>inner</rules> rest</rules>"
+
+    spans = [(b.start, b.end) for b in find_blocks(prompt) if b.label == "<rules>"]
+
+    assert spans == [(0, len(prompt)), (13, 33)]
+
+
+def test_only_a_newline_ends_a_line() -> None:
+    assert find_blocks("text\x0c# Not a heading\nbody") == []
