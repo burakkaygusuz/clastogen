@@ -57,6 +57,5 @@ def parse(reply: str) -> Action:
 
 
 def ask(order: dict[str, object], message: str) -> Action:
-    # SYSTEM_PROMPT is read here, at call time, so Clastogen can replace it.
     user = f"Order record:\n{json.dumps(order)}\n\nCustomer message:\n{message}\n\n{OUTPUT_FORMAT}"
     return parse(pi_client.complete(SYSTEM_PROMPT, user))
