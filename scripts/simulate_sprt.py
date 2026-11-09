@@ -65,7 +65,7 @@ def run_simulation(
     sprt = SPRT(config)
 
     def evaluator() -> bool:
-        return rng.random() < true_p
+        return rng.random() < true_p  # NOSONAR
 
     results = [sprt.run_evaluator(evaluator) for _ in range(trials)]
     return _tally([r.decision for r in results], [r.sample_count for r in results], true_p, 0.0)
@@ -75,7 +75,7 @@ def _baseline_config(
     rng: random.Random, baseline_p: float, delta: float, max_steps: int, alpha: float = 0.05
 ) -> SPRTConfig | None:
     """Mimics the plugin baseline: the passing test run plus BASELINE_RUNS - 1 reruns; None when rejected as flaky."""
-    baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]
+    baseline = [True] + [rng.random() < baseline_p for _ in range(BASELINE_RUNS - 1)]  # NOSONAR
     return config_from_baseline(baseline, delta=delta, max_steps=max_steps, alpha=alpha)
 
 
@@ -109,10 +109,10 @@ def run_full_flow_simulation(
     any_killed = 0
 
     def mutant_evaluator() -> bool:
-        return rng.random() < mutant_p
+        return rng.random() < mutant_p  # NOSONAR
 
     def family_evaluator() -> bool:
-        return family_rng.random() < mutant_p
+        return family_rng.random() < mutant_p  # NOSONAR
 
     for _ in range(trials):
         config = _baseline_config(rng, baseline_p, delta, max_steps, alpha)
@@ -142,7 +142,7 @@ def run_test_family_simulation(
     rng = random.Random(seed)
 
     def passes() -> bool:
-        return rng.random() < baseline_p
+        return rng.random() < baseline_p  # NOSONAR
 
     killed = 0
     for _ in range(trials):
@@ -165,7 +165,7 @@ def run_fixed_n_flow(
         if config is None:
             continue
         accepted += 1
-        passes = sum(rng.random() < mutant_p for _ in range(n))
+        passes = sum(rng.random() < mutant_p for _ in range(n))  # NOSONAR
         killed += fixed_n_decision(passes, n, config.p0, config.alpha)
     return killed / accepted * 100.0 if accepted else 0.0
 
@@ -173,7 +173,7 @@ def run_fixed_n_flow(
 def run_pass_rate_simulation(true_p: float, trials: int = 10_000, seed: int = 42) -> tuple[float, float]:
     """Returns (pass %, mean samples) of evaluate_pass_rate with its default arguments."""
     rng = random.Random(seed)
-    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]
+    results = [evaluate_pass_rate(lambda: rng.random() < true_p) for _ in range(trials)]  # NOSONAR
     return sum(r.passed for r in results) / trials * 100.0, sum(r.sample_count for r in results) / trials
 
 
