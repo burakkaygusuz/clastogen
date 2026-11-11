@@ -17,14 +17,15 @@ import clastogen.reporting.terminal
 import clastogen.runner
 import clastogen.stats.assertions
 import clastogen.stats.sprt
+import clastogen.stats.types
 import clastogen.suppressions
 import clastogen.trial
 
 pytest_plugins = ["pytester"]
 
-# The plugin loads via the pytest11 entry point before pytest-cov starts; reload so module-level lines are measured.
 for mod in [
     clastogen.exceptions,
+    clastogen.stats.types,
     clastogen.models,
     clastogen.reporting.scoring,
     clastogen.reporting.render,

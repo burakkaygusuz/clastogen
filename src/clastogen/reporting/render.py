@@ -23,7 +23,6 @@ from clastogen.reporting.scoring import (
     weakest_first,
 )
 
-# Declaration order is the display order: blind spots first, measured kills next, excluded mutants last.
 STATUS_LABELS = {
     MutantStatus.SURVIVED: "✗ SURVIVED",
     MutantStatus.INCONCLUSIVE: "? INCONCLUSIVE",
@@ -44,7 +43,6 @@ _COLORS = {
     MutantStatus.SUPPRESSED: "var(--suppressed)",
 }
 
-# The assertion that kills a survivor of each operator. skills/clastogen/SKILL.md documents the same table.
 KILL_HINTS = {
     "delete_constraint": "The agent obeys the rule for an input that needs the rule.",
     "invert_negation": "The agent refuses the action or does the action that the rule names.",
@@ -101,7 +99,7 @@ def _donut(summary: MutationSummary) -> str:
     """Status distribution as SVG circle segments; r=15.915 makes the circumference 100 so dash lengths are percents."""
     arcs: list[str] = []
     legend: list[str] = []
-    offset = 25.0  # starts the first segment at 12 o'clock
+    offset = 25.0
     for s, n in summary.counts.items():
         pct = n / summary.total * 100 if summary.total else 0.0
         if not n:
@@ -173,7 +171,7 @@ def _matrix(results: Sequence[MutantExecution], executions: Sequence[MutantExecu
 _STATUS_ORDER = {status: i for i, status in enumerate(STATUS_LABELS)}
 
 
-def _by_status(results: Sequence[MutantExecution]) -> list[MutantExecution]:
+def by_status(results: Sequence[MutantExecution]) -> list[MutantExecution]:
     return sorted(results, key=lambda r: _STATUS_ORDER[r.status])
 
 
@@ -191,7 +189,6 @@ def _results_table(
 ) -> str:
     if not results:
         return '<p class="empty">No mutants were evaluated.</p>'
-    # A survivor passed every test that ran it, so name all of them instead of the one that represents the mutant.
     passed_in = survivor_tests(executions)
 
     def _behavior(mutant_id: str) -> str:
@@ -267,7 +264,7 @@ def render_html(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
     """Renders a self-contained HTML report with inline SVG/CSS charts and no external assets."""
-    results = _by_status(summary.results)
+    results = by_status(summary.results)
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -284,7 +281,6 @@ def render_html(
 
 
 def _code(text: str) -> str:
-    # Prompt text is untrusted: a code span renders it literally, with no HTML, links or @mentions in a PR comment.
     text = " ".join(text.split()).replace("|", "\\|")
     fence = "`" * (max(map(len, re.findall("`+", text)), default=0) + 1)
     return f"{fence} {text} {fence}"
@@ -293,7 +289,7 @@ def _code(text: str) -> str:
 def _markdown_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> list[str]:
     passed_in = survivor_tests(executions)
     rows = ["| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
-    for r in _by_status(summary.results):
+    for r in by_status(summary.results):
         tests = ", ".join(t.split("::")[-1] for t in _tests_shown(r, passed_in))
         change = f"{r.description} [{r.error}]" if r.error else r.description
         if hint := kill_hint(r):

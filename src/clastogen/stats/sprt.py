@@ -4,7 +4,8 @@ import math
 from collections.abc import Callable, Sequence
 from functools import cache
 
-from clastogen.models import MIN_BASELINE_RATE, Decision, SPRTConfig, SPRTResult
+from clastogen.models import MIN_BASELINE_RATE
+from clastogen.stats.types import Decision, SPRTConfig, SPRTResult
 
 logger = logging.getLogger(__name__)
 

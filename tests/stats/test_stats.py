@@ -72,7 +72,6 @@ def test_evaluate_pass_rate_perfect_evaluator_passes_after_wald_bound() -> None:
 
     res = evaluate_pass_rate(evaluator)
 
-    # Defaults: H0 0.90 vs H1 0.70, alpha = beta = 0.05 -> ceil(ln 19 / ln(9/7)) = 12 passes.
     assert res.passed
     assert res.decided
     assert calls[0] == res.sample_count == res.success_count == 12
@@ -85,7 +84,6 @@ def test_assert_pass_rate_failing_evaluator_stops_early() -> None:
     with pytest.raises(AssertionError) as exc_info:
         assert_pass_rate(evaluator, description="payment_authorization")
 
-    # ceil(ln 19 / ln 3) = 3 failures.
     assert calls[0] == 3
     message = str(exc_info.value)
     assert "Statistical pass rate assertion failed: 'payment_authorization'" in message
@@ -95,7 +93,6 @@ def test_assert_pass_rate_failing_evaluator_stops_early() -> None:
 
 def test_evaluate_pass_rate_truncation_decides_by_llr_sign() -> None:
     passing, _ = _counting(True)
-    # T, T, F, T leaves LLR = 3 ln(7/9) + ln 3 > 0, short of the kill threshold ln 19.
     flaky = itertools.cycle([True, True, False]).__next__
 
     good = evaluate_pass_rate(passing, max_samples=5)
@@ -139,7 +136,6 @@ def test_paired_mcnemar_p_value_is_exact_when_candidate_is_not_worse() -> None:
 
     res = evaluate_regression(baseline, candidate, sample_count=5, paired=True)
 
-    # One baseline-only win and one candidate-only win: P(X >= 1 | n=2, p=0.5) = 0.75.
     assert res.test_name == "mcnemar"
     assert res.p_value == pytest.approx(0.75)
     assert not res.regressed
@@ -234,3 +230,9 @@ def test_compare_pass_counts_matches_the_unpaired_evaluation(
 def test_compare_pass_counts_rejects_invalid_arguments(kwargs: dict[str, float], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         compare_pass_counts(3, 3, **{"sample_count": 10, **kwargs})  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize(("baseline", "candidate"), [(12, 0), (5, 11), (-1, 3), (3, -1)])
+def test_compare_pass_counts_rejects_counts_outside_the_sample(baseline: int, candidate: int) -> None:
+    with pytest.raises(ValueError, match="must be between 0 and sample_count"):
+        compare_pass_counts(baseline, candidate, 10)

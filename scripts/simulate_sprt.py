@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random  # Seeded PRNG: the simulations must be reproducible, not unpredictable.
+import random
 import sys
 from dataclasses import dataclass
 from functools import cache
@@ -103,7 +103,7 @@ def run_full_flow_simulation(
         raise ValueError("baseline_p and mutant_p must be in [0, 1]")
 
     rng = random.Random(seed)
-    family_rng = random.Random(seed + 1)  # Separate stream: the single-mutant rates stay independent of family_size.
+    family_rng = random.Random(seed + 1)
     decisions: list[Decision] = []
     steps: list[int] = []
     any_killed = 0

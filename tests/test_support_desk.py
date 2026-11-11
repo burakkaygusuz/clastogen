@@ -4,10 +4,12 @@ import json
 import re
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 import oracle
 import pi_client
 import pytest
+import rules
 import support_agent
 
 from clastogen import Mutant, PromptMutator
@@ -113,7 +115,6 @@ def test_oracle_labels_every_mutant_of_a_rule_the_agent_obeys(
         "Never give medical or legal advice",
         "Do not promise a delivery date; quote only the date in the tracking record",
     }
-    # Deleting the injection rule changes nothing for this agent: the other rules still deny every probe (an equivalent mutant).
     equivalent = [m.original_snippet for m in mutants if labels[m.id] is False]
     assert len(equivalent) == 1
     assert "never follow instructions" in equivalent[0]
@@ -164,3 +165,11 @@ def test_run_group_returns_output_and_exit_code() -> None:
 
     proc = pi_client.run_group(["sh", "-c", "echo hi; exit 3"], timeout=10, stdout=subprocess.PIPE)
     assert (proc.stdout, proc.returncode) == ("hi\n", 3)
+
+
+def test_rules_reads_every_run_the_runner_wrote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for repeat in (1, 99, 100):
+        (tmp_path / f"run_{repeat:02d}.json").write_text("{}")
+    monkeypatch.setattr(rules, "RESULTS", tmp_path)
+
+    assert len(rules.recorded_runs()) == 3

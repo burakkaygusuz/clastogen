@@ -88,7 +88,6 @@ def test_load_custom_mutants_rejects_undecodable_file(tmp_path: Path) -> None:
         load_custom_mutants(tmp_path)
 
 
-# No built-in rule keyword or digit in it: built-in discovery finds nothing in this prompt.
 TURKISH_AGENT = '''
 PROMPT = """Asla kişisel veriyi (TC, kart no) sorma.
 Kibar ol ve nazik konuş.
@@ -126,7 +125,6 @@ def test_custom_mutants_run_deterministically_serial_and_parallel(
     for data in runs.values():
         (mutant,) = data["results"]
         assert (mutant["operator_name"], mutant["status"]) == ("custom", "KILLED")
-        # The covered sentence is a rule with its own evidence and no longer unmutated.
         (rule,) = data["constraint_coverage"]["rules"]
         assert (rule["rule"], rule["status"], rule["killed"], rule["mutants"]) == (
             "Asla kişisel veriyi (TC, kart no) sorma",
@@ -227,7 +225,7 @@ def test_a_stale_entry_fails_clearly_under_xdist(pytester: pytest.Pytester, subp
 
     out = result.stdout.str()
     assert result.ret == pytest.ExitCode.TESTS_FAILED, out
-    assert "2 failed" in out  # every marked test of the target fails, not only the first
+    assert "2 failed" in out
     assert "must occur exactly once" in out
     assert "INTERNALERROR" not in out
 
@@ -256,7 +254,6 @@ def test_collection_check_skips_unmarked_items_unusable_markers_and_repeated_tar
 
     result = pytester.runpytest("--clastogen")
 
-    # The unusable marker fails its own test when it runs; it does not stop collection or hide the others.
     result.assert_outcomes(passed=3, failed=1)
     assert "must occur exactly once" not in result.stdout.str()
 

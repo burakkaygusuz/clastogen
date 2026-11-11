@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 from pytest_check import check
 
+from clastogen.exceptions import TrialError
+from clastogen.trial import run_trial, soft_failed
 from tests.plugin import AGENT
 
 
@@ -333,3 +337,112 @@ def test_exits(resource):
     data = json.loads(json_out.read_text(encoding="utf-8"))
     (mutant,) = data["results"]
     assert (mutant["status"], mutant["error"]) == ("ERROR", error), result.stdout.str()
+
+
+def test_soft_failures_of_pytest_check_kill_mutants(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_soft="""
+import pytest, agent
+from pytest_check import check
+
+LENGTH = len(agent.PROMPT)
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_soft():
+    check.equal(len(agent.PROMPT), LENGTH)
+""",
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    check.equal({r["status"] for r in data["results"]}, {"KILLED"}, result.stdout.str())
+    result.assert_outcomes(passed=1)
+
+
+def test_soft_failure_before_an_exception_is_not_charged_to_the_real_test(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_soft_raise="""
+import pytest, agent
+from pytest_check import check
+
+LENGTH = len(agent.PROMPT)
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_soft_raise():
+    check.equal(len(agent.PROMPT), LENGTH)
+    if len(agent.PROMPT) != LENGTH:
+        raise ValueError("boom")
+""",
+    )
+    json_out = pytester.path / "out.json"
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}")
+
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    check.equal({r["status"] for r in data["results"]}, {"ERROR"}, result.stdout.str())
+    check.is_in("1 passed", result.stdout.str())
+
+
+def test_a_marked_test_with_the_subtests_fixture_is_a_usage_error(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_sub="""
+import pytest, agent
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_sub(subtests):
+    open("ran.txt", "w").close()
+    with subtests.test("length"):
+        assert len(agent.PROMPT) > 0
+""",
+    )
+    result = pytester.runpytest("--clastogen")
+
+    result.stdout.fnmatch_lines(["*uses the subtests fixture*"])
+    assert not (pytester.path / "ran.txt").exists()
+
+
+@pytest.mark.usefixtures("subprocess_env")
+def test_inactive_pytest_check_leaves_no_stale_failures(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        agent=AGENT,
+        test_stale="""
+import pytest, agent
+from pytest_check import check
+
+def test_soft_unmarked():
+    check.equal(1, 2)
+
+@pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2, p0=0.90)
+def test_marked():
+    assert agent.PROMPT
+""",
+    )
+    json_out = pytester.path / "out.json"
+    pytester.runpytest_subprocess("--clastogen", f"--clastogen-json={json_out}", "-p", "no:check")
+
+    data = json.loads(json_out.read_text(encoding="utf-8"))
+    assert len(data["results"]) == 2
+
+
+def test_soft_failed_ignores_missing_pytest_check_functions(
+    monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config
+) -> None:
+    monkeypatch.setitem(sys.modules, "pytest_check.check_log", SimpleNamespace())
+    assert soft_failed(pytestconfig, clear=True) is False
+
+
+def _group_trial(pytester: pytest.Pytester, body: str) -> bool:
+    item = pytester.getitem(f"def test_func():\n    {body}\n")
+    return run_trial(item)
+
+
+def test_exception_group_of_assertions_is_a_failed_trial(pytester: pytest.Pytester) -> None:
+    assert _group_trial(pytester, "raise ExceptionGroup('g', [AssertionError('a')])") is False
+
+
+def test_exception_group_with_other_errors_is_a_trial_error(pytester: pytest.Pytester) -> None:
+    with pytest.raises(TrialError):
+        _group_trial(pytester, "raise ExceptionGroup('g', [AssertionError('a'), ValueError('b')])")

@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results" / pi_client.MODEL.removeprefix("openrouter/").replace("/", "_")
 MAX_MUTANTS = pytestmark.kwargs["max_mutants"]
 REPEATS = 5
-LABELLINGS = 3  # the oracle is statistical too: borderline mutants flip between labellings
+LABELLINGS = 3
 WORKERS = 4
 RUN_TIMEOUT = 3 * 3600
 
@@ -53,7 +53,6 @@ def run_once(repeat: int) -> None:
             stdout=f,
             stderr=subprocess.STDOUT,
         )
-    # A failing test on the original prompt exits 1 but still writes the JSON; only a missing JSON is a crash.
     if not out.exists():
         tail = "\n".join(log.read_text().splitlines()[-20:])
         raise RuntimeError(f"run {repeat} failed (exit {proc.returncode}):\n{tail}")

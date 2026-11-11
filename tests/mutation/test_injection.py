@@ -100,3 +100,11 @@ def test_failed_override_leaves_target_unchanged(monkeypatch: pytest.MonkeyPatch
         pass
 
     assert owner.system == "original"
+
+
+def test_override_prompt_leaves_an_equal_copy_in_another_module_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    _register_module(monkeypatch, "xm_copy_agent", PROMPT="".join(["origin", "al"]))
+    other = _register_module(monkeypatch, "xm_copy_other", PROMPT="".join(["origi", "nal"]))
+
+    with override_prompt("xm_copy_agent:PROMPT", "mutated"):
+        check.equal(other.PROMPT, "original")

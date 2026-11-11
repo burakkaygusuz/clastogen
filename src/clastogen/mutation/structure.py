@@ -4,11 +4,11 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-_HEADING = re.compile(
-    r"^(#{1,6})[ \t]+(\S.*)$"
-)  # \S after the spaces: the two parts cannot overlap, so no backtracking
-_XML_BLOCK = re.compile(r"<([A-Za-z][\w-]*)(?:\s[^>]*)?>(.*?)</\1>", re.DOTALL)
+_HEADING = re.compile(r"^(#{1,6})[ \t]+(\S.*)$")
+_EXAMPLE_OPEN = re.compile(r"<example", re.IGNORECASE)
+_XML_TAG = re.compile(r"<([A-Za-z][\w-]*)(?:\s[^<>]*)?>|</([A-Za-z][\w-]*)>")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
+_LINE = re.compile(r"[^\n]+\n?|\n")
 _EXAMPLE = re.compile(r"\bexamples?\b", re.IGNORECASE)
 
 
@@ -23,29 +23,35 @@ class Block:
 
 
 def _xml_blocks(prompt: str) -> list[Block]:
+    """Pairs XML tags with a stack: a close tag matches the nearest open tag of its name and drops the tags opened after it."""
     blocks: list[Block] = []
-    pending = [(0, len(prompt))]  # explicit worklist: nesting depth is untrusted, so no recursion
-    while pending:
-        pos, endpos = pending.pop()
-        for m in _XML_BLOCK.finditer(prompt, pos, endpos):
-            name = m[1]
-            is_example = name.lower().startswith("example")
-            # ponytail: nested same-name tags pair first-close; use a stack if bug reports appear
-            if not (
-                is_example and "<example" in m[2].lower()
-            ):  # a wrapper such as <examples> is kept: its children are the blocks
-                blocks.append(Block("example" if is_example else "section", m.start(), m.end(), f"<{name}>"))
-            pending.append((m.start(2), m.end(2)))
+    open_tags: list[tuple[str, int, int]] = []
+    stack_index: dict[str, list[int]] = {}
+    for m in _XML_TAG.finditer(prompt):
+        if m[1]:
+            stack_index.setdefault(m[1], []).append(len(open_tags))
+            open_tags.append((m[1], m.start(), m.end()))
+            continue
+        if not stack_index.get(m[2]):
+            continue
+        i = stack_index[m[2]][-1]
+        name, start, content_start = open_tags[i]
+        for dropped, _, _ in open_tags[i:]:
+            stack_index[dropped].pop()
+        del open_tags[i:]
+        is_example = name.lower().startswith("example")
+        if not (is_example and _EXAMPLE_OPEN.search(prompt, content_start, m.start())):
+            blocks.append(Block("example" if is_example else "section", start, m.end(), f"<{name}>"))
     return blocks
 
 
 def find_blocks(prompt: str) -> list[Block]:
     """Finds Markdown heading sections and XML tag blocks, ordered by position; fenced code is not scanned for headings."""
     blocks: list[Block] = []
-    headings: list[tuple[int, int, str]] = []  # (level, start, title)
-    fence: str = ""  # the opening run of ` or ~ while inside a fenced block
+    headings: list[tuple[int, int, str]] = []
+    fence: str = ""
     offset = 0
-    for line in prompt.splitlines(keepends=True):
+    for line in _LINE.findall(prompt):
         if m := _FENCE.match(line):
             run = m[1]
             if not fence:

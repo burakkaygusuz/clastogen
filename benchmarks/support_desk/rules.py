@@ -69,8 +69,12 @@ def markdown(rows: list[dict], provenance: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def recorded_runs() -> list[dict]:
+    return [json.loads(p.read_text()) for p in sorted(RESULTS.glob("run_*.json"))]
+
+
 def main() -> None:
-    runs = [json.loads(p.read_text()) for p in sorted(RESULTS.glob("run_[0-9][0-9].json"))]
+    runs = recorded_runs()
     document = json.loads((RESULTS / "summary.json").read_text())
     rows = rule_rows(runs)
     document["rules"] = {"merge_rule": MERGE_NOTE, "rows": rows}

@@ -21,7 +21,6 @@ def _parse_entry(candidate: Path, entry: dict[str, object]) -> CustomMutant:
             raise pytest.UsageError(f"Mutant entry in '{candidate}' missing '{name}': {entry}")
         if not isinstance(entry[name], str):
             raise pytest.UsageError(f"Mutant entry in '{candidate}': '{name}' must be a string: {entry}")
-    # An empty mutated deletes the snippet; every other field must say something.
     for name in ("target", "original", "description"):
         if not str(entry[name]).strip():
             raise pytest.UsageError(f"Mutant entry in '{candidate}' has an empty '{name}': {entry}")

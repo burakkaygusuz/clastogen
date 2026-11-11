@@ -209,7 +209,7 @@ def test_deleting_a_rule_leaves_a_longer_rule_that_contains_it() -> None:
 def test_inverting_the_second_rule_leaves_the_first_untouched() -> None:
     mutator = PromptMutator()
     second = mutator._rule_spans(REPEATED)[1]
-    mutant = mutator._invert_mutant(REPEATED, second)
+    mutant = mutator._replace_mutant(REPEATED, second, mutator.NEGATION_REPLACEMENTS, "invert_negation", "Inverted")
 
     assert mutant is not None
     assert mutant.mutated_prompt == "Never share the discount code.\nALWAYS share the discount codes publicly."
@@ -222,7 +222,7 @@ def test_an_edit_hits_only_the_rule_it_was_made_for() -> None:
 
     assert [prompt[r.start : r.end] for r in spans] == [r.text for r in spans]
     assert [r.text for r in spans] == ["Do not share the code", "Do not share the code word."]
-    mutant = mutator._invert_mutant(prompt, spans[1])
+    mutant = mutator._replace_mutant(prompt, spans[1], mutator.NEGATION_REPLACEMENTS, "invert_negation", "Inverted")
     assert mutant is not None
     assert mutant.mutated_prompt == "Do not share the code. DO share the code word."
 
@@ -263,3 +263,13 @@ def test_unmatched_sentences_are_the_ones_rule_discovery_skips() -> None:
     assert mutator.extract_unmatched_sentences(f"{prompt}\n<example>\nHello there my friend\n</example>") == [
         "Be warm and friendly with customers"
     ]
+
+
+def test_two_different_mutants_with_one_id_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    mutator = PromptMutator("m:P")
+    a = Mutant.create("m:P", "op", "x", "y", "prompt one", "d")
+    b = Mutant.create("m:P", "op", "x", "y", "prompt two", "d")
+    monkeypatch.setattr(mutator, "_builtin_mutants", lambda prompt, max_mutants: [a, b])
+
+    with pytest.raises(ValueError, match=r"share mutant ID \w+: 'op' and 'op'"):
+        mutator.generate_mutants("anything", 5)

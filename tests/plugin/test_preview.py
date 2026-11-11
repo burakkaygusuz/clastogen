@@ -4,7 +4,6 @@ import pytest
 
 from tests.plugin import AGENT
 
-# Each body appends to calls.log, so a line in it means the test ran (the original call or a mutant trial).
 _TESTS = """
 import pytest
 from pathlib import Path
@@ -68,3 +67,22 @@ def test_collect_only_without_marked_tests_says_so(pytester: pytest.Pytester) ->
     result = pytester.runpytest("--clastogen", "--collect-only")
     assert result.ret == 0
     assert "Clastogen: No @pytest.mark.clastogen tests collected." in result.stdout.str()
+
+
+@pytest.mark.usefixtures("subprocess_env")
+def test_collect_only_reports_a_mutant_id_collision_as_a_usage_error(pytester: pytest.Pytester) -> None:
+    pytester.makeconftest(
+        """
+from clastogen.models import Mutant
+from clastogen.mutation.mutator import PromptMutator
+
+a = Mutant.create("agent:PROMPT", "op_a", "x", "y", "prompt one", "d")
+b = Mutant.create("agent:PROMPT", "op_a", "x", "y", "prompt two", "d")
+PromptMutator._builtin_mutants = lambda self, prompt, max_mutants: [a, b]
+"""
+    )
+    pytester.makepyfile(agent=AGENT, test_preview=_TESTS)
+    result = pytester.runpytest_subprocess("--clastogen", "--collect-only")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*share mutant ID ????????????: 'op_a' and 'op_a'*"])
+    assert "INTERNALERROR" not in result.stdout.str() + result.stderr.str()

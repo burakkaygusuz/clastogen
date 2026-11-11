@@ -1,4 +1,6 @@
 import math
+import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
@@ -68,7 +70,6 @@ def test_fixed_sample_size_is_the_smallest_test_with_the_sprt_error_rates(
     check.equal((n, c), expected)
     check.less_equal(binom_cdf(n, c, config.p0), config.alpha)
     check.less_equal(1 - binom_cdf(n, c, config.p1), config.beta)
-    # One call fewer has no cutoff that satisfies both error rates.
     check.is_false(
         any(
             binom_cdf(n - 1, k, config.p0) <= config.alpha and 1 - binom_cdf(n - 1, k, config.p1) <= config.beta
@@ -89,7 +90,7 @@ def test_fixed_sample_size_survives_a_small_delta_that_overflowed_binomial_coeff
     found = fixed_sample_size(config)
     assert found is not None
     n, c = found
-    assert n > 1030  # math.comb(n, c) * float overflows from here
+    assert n > 1030
     assert binom_cdf(n, c, config.p0) <= config.alpha
     assert 1 - binom_cdf(n, c, config.p1) <= config.beta
     assert binom_cdf(n, c - 1, config.p0) <= config.alpha
@@ -100,3 +101,8 @@ def test_fixed_sample_size_is_none_beyond_the_sample_cap() -> None:
     config = SPRTConfig.from_absolute_drop(p0=11 / 12, delta=0.01, alpha=0.05, beta=0.10, max_steps=20)
 
     assert fixed_sample_size(config) is None
+
+
+def test_importing_the_stats_does_not_load_pytest() -> None:
+    code = "import sys, clastogen.stats.sprt; assert 'pytest' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603

@@ -55,7 +55,7 @@ def complete(system_prompt: str, user_message: str) -> str:
     proc = run_group(
         ["pi", *PI_FLAGS, "--system-prompt", system_prompt, user_message],
         timeout=120,
-        stdin=subprocess.DEVNULL,  # pi -p waits for piped stdin
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

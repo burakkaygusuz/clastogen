@@ -42,6 +42,7 @@ def test_load_suppressions_toml_format(tmp_path: Path) -> None:
         ("suppressions = 'abcdefabcdef'\n", "expected \\[\\[suppressions\\]\\] tables"),
         ("suppressions = ['abcdefabcdef']\n", "must be a table"),
         ("[[suppressions]]\nreason = 'x'\n", "missing 'mutant_id'"),
+        ("[[suppressions]]\nmutant_id = 123\nreason = 'x'\n", "'mutant_id' must be a string"),
         ("[[suppressions]]\nmutant_id = 'abcdefabcdef'\n", "non-empty 'reason'"),
         ("[[suppressions]\n", "Cannot read"),
         ("[[suppression]]\nmutant_id = 'abcdefabcdef'\nreason = 'x'\n", "Unknown top-level key.*suppression"),
@@ -104,3 +105,167 @@ def test_a_suppression_matching_a_mutant_is_not_warned_about(pytester: pytest.Py
 
     assert "SUPPRESSED" in out
     assert "Suppressions matching no mutant" not in out
+
+
+def test_clastogen_dir_outside_the_rootdir_belongs_to_another_project(pytester: pytest.Pytester) -> None:
+    _write_suppressions(pytester.path, "")
+    (pytester.path / "sub").mkdir()
+    result = pytester.runpytest("--clastogen", "--rootdir=sub")
+
+    assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED, result.stderr.str()
+
+
+def test_clastogen_dir_next_to_unmarked_tests_is_fine(pytester: pytest.Pytester) -> None:
+    sub = _nested_project(pytester)
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen")
+
+    assert result.ret == pytest.ExitCode.OK
+
+
+def test_clastogen_dir_of_a_path_argument_fails_even_when_the_rootdir_has_one(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(pytester.path, "")
+    (pytester.path / "sub").mkdir()
+    _write_suppressions(pytester.path / "sub", "")
+    (pytester.path / "sub" / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen", "sub")
+
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*sub*.clastogen*is ignored*"])
+
+
+def test_clastogen_dir_in_the_rootdir_is_not_reported(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(pytester.path, "")
+    (pytester.path / "sub").mkdir()
+    (pytester.path / "sub" / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen", "sub")
+
+    assert result.ret == pytest.ExitCode.OK
+
+
+def test_clastogen_dir_of_the_invocation_dir_without_arguments_fails(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytester.makeini("[pytest]\n")
+    sub = pytester.path / "sub"
+    sub.mkdir()
+    _write_suppressions(sub, "")
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    monkeypatch.chdir(sub)
+    result = pytester.runpytest_inprocess("--clastogen")
+
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+
+
+def test_a_symlinked_rootdir_is_not_reported(pytester: pytest.Pytester) -> None:
+    _write_suppressions(pytester.path, "")
+    link = pytester.path.parent / f"{pytester.path.name}_link"
+    link.symlink_to(pytester.path, target_is_directory=True)
+    result = pytester.runpytest("--clastogen", f"--rootdir={link}")
+
+    assert result.ret != pytest.ExitCode.USAGE_ERROR
+
+
+def _nested_project(pytester: pytest.Pytester) -> Path:
+    pytester.makeini("[pytest]\n")
+    sub = pytester.path / "tests" / "sub"
+    sub.mkdir(parents=True)
+    _write_suppressions(sub, "")
+    (sub / "test_a.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_a:P")\ndef test_a(): pass\nP = "x"\n'
+    )
+    return sub
+
+
+@pytest.mark.parametrize("args", [(), ("tests",)], ids=["no_args", "tests_arg"])
+def test_clastogen_dir_between_a_test_and_the_rootdir_fails(pytester: pytest.Pytester, args: tuple[str, ...]) -> None:
+    _nested_project(pytester)
+    result = pytester.runpytest("--clastogen", *args)
+
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*sub*.clastogen*is ignored*"])
+
+
+def test_clastogen_dir_between_a_test_and_the_rootdir_fails_from_a_subdirectory(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _nested_project(pytester)
+    monkeypatch.chdir(pytester.path / "tests")
+    result = pytester.runpytest_inprocess("--clastogen")
+
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+
+
+def test_only_the_rootdir_clastogen_dir_is_fine_for_nested_tests(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(pytester.path, "")
+    sub = pytester.path / "tests" / "sub"
+    sub.mkdir(parents=True)
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen")
+
+    assert result.ret == pytest.ExitCode.OK
+
+
+def test_nested_check_holds_with_a_symlinked_rootdir(pytester: pytest.Pytester) -> None:
+    _write_suppressions(pytester.path, "")
+    sub = pytester.path / "tests"
+    sub.mkdir()
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    link = pytester.path.parent / f"{pytester.path.name}_nested_link"
+    link.symlink_to(pytester.path, target_is_directory=True)
+    result = pytester.runpytest("--clastogen", f"--rootdir={link}", str(link / "tests"))
+
+    assert result.ret == pytest.ExitCode.OK
+
+
+def test_nested_clastogen_dir_fails_the_marked_test_under_xdist(pytester: pytest.Pytester) -> None:
+    sub = _nested_project(pytester)
+    (sub / "test_a.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_a:P")\ndef test_a(): print("BODY RAN")\nP = "x"\n'
+    )
+    result = pytester.runpytest("--clastogen", "-n", "2")
+
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    out = result.stdout.str()
+    assert "is ignored" in out
+    assert "BODY RAN" not in out
+
+
+def test_clastogen_dir_next_to_unmarked_tests_is_fine_under_xdist(pytester: pytest.Pytester) -> None:
+    sub = pytester.path / "tests" / "sub"
+    sub.mkdir(parents=True)
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(sub, "")
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    (pytester.path / "test_b.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_b:P")\ndef test_b(): pass\nP = "x"\n'
+    )
+    result = pytester.runpytest("--clastogen", "-n", "2")
+
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
+
+
+def test_clean_layout_passes_under_xdist(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(pytester.path, "")
+    (pytester.path / "tests").mkdir()
+    (pytester.path / "tests" / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen", "-n", "2")
+
+    assert result.ret == pytest.ExitCode.OK
+
+
+def test_clastogen_dir_without_tests_is_fine_under_xdist(pytester: pytest.Pytester) -> None:
+    pytester.makeini("[pytest]\n")
+    (pytester.path / "docs").mkdir()
+    _write_suppressions(pytester.path / "docs", "")
+    (pytester.path / "conftest_only").mkdir()
+    (pytester.path / "conftest_only" / "conftest.py").write_text("")
+    _write_suppressions(pytester.path / "conftest_only", "")
+    (pytester.path / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen", "-n", "2")
+
+    assert result.ret == pytest.ExitCode.OK

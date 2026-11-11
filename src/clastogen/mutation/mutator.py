@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from decimal import Decimal, localcontext
+from functools import partial
 from itertools import zip_longest
 from typing import NamedTuple
 
@@ -23,6 +24,9 @@ class Rule(NamedTuple):
         return self.start + len(self.text)
 
 
+Operator = Callable[[str, Rule], Mutant | None]
+
+
 def _clip(text: str, limit: int) -> str:
     """Shortens text to at most limit characters at a word boundary and marks the cut with an ellipsis."""
     text = text.strip()
@@ -41,7 +45,6 @@ def _bullet_start(text: str) -> int | None:
         if not text.endswith((".", ")")) or len(digits) == len(text) - 1:
             return None
         start = len(digits)
-    # A number ending the previous sentence ("limited to $100.") is not a marker.
     head = text[:start].rstrip(" \t")
     return start if not head or head.endswith("\n") else None
 
@@ -172,7 +175,7 @@ class PromptMutator:
     def _delete_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Removes rule with its bullet and trailing punctuation; None when the prompt is unchanged."""
         before = prompt[: rule.start]
-        trimmed = before.rstrip()  # stripping the whitespace run first keeps the bullet search linear
+        trimmed = before.rstrip()
         bullet = _bullet_start(trimmed)
         head = (trimmed[:bullet] if bullet is not None and trimmed != before else before).rstrip(" \t")
         after = prompt[rule.end :]
@@ -221,33 +224,13 @@ class PromptMutator:
                     )
         return None
 
-    def _invert_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
-        """Flips the first matching negation or obligation keyword in rule; None when none applies."""
-        return self._replace_mutant(prompt, rule, self.NEGATION_REPLACEMENTS, "invert_negation", "Inverted")
-
-    def _weaken_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
-        """Softens the first matching hard keyword in rule into a suggestion; None when none applies."""
-        return self._replace_mutant(prompt, rule, self.WEAKENING_REPLACEMENTS, "weaken_modal", "Weakened")
-
-    def _flip_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
-        """Reverses the first comparator or ordering word in rule (at most becomes AT LEAST); None when none applies."""
-        return self._replace_mutant(prompt, rule, self.COMPARATOR_REPLACEMENTS, "flip_comparator", "Flipped")
-
-    def _scope_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
-        """Narrows the first universal quantifier in rule (all becomes SOME); None when none applies."""
-        return self._replace_mutant(prompt, rule, self.SCOPE_REPLACEMENTS, "scope_swap", "Narrowed")
-
-    def _exception_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
-        """Drops the first unless or except clause of rule, up to the next comma or semicolon; None when there is none."""
-        return self._replace_mutant(prompt, rule, ((self.EXCEPTION_PATTERN, ""),), "drop_exception", "Dropped")
-
     def _threshold_mutant(self, prompt: str, rule: Rule) -> Mutant | None:
         """Multiplies the first number in rule by 10 (a $50 limit becomes $500); None when rule has no number."""
         match = self.NUMBER_PATTERN.search(rule.text)
         if match is None:
             return None
         raw = match.group()
-        with localcontext(prec=len(raw) + 2):  # the default 28 digits would round a long number
+        with localcontext(prec=len(raw) + 2):
             scaled = Decimal(raw.replace(",", "")) * 10
         number = format(scaled, ",f" if "," in raw else "f")
         changed = rule.text[: match.start()] + number + rule.text[match.end() :]
@@ -283,7 +266,6 @@ class PromptMutator:
         eligible: list[Block] = []
         for b in find_blocks(prompt):
             text = prompt[b.start : b.end]
-            # Identical blocks share a mutant ID (it hashes the text, not the position), so only the first is kept.
             if (
                 len(text) * 2 <= len(prompt)
                 and (b.kind == "example" or any(b.start <= rule.start and rule.end <= b.end for rule in rules))
@@ -328,29 +310,44 @@ class PromptMutator:
         unique: dict[str, Mutant] = {}
         for m in [*self.custom_mutants(prompt), *self._builtin_mutants(prompt, max_mutants)]:
             unique.setdefault(m.mutated_prompt, m)
+        by_id: dict[str, Mutant] = {}
+        for m in unique.values():
+            if (other := by_id.setdefault(m.id, m)) is not m:
+                raise ValueError(
+                    f"Two different mutants of one prompt share mutant ID {m.id}: '{other.operator_name}' and '{m.operator_name}'"
+                )
         return list(unique.values())
 
     def _builtin_mutants(self, prompt: str, max_mutants: int) -> Sequence[Mutant]:
         """Generates a bounded sequence of mutants (deletions, negation inversions, modal weakenings, threshold changes, dropped exceptions, flipped comparators, narrowed scopes, deleted sections and examples)."""
 
-        unique: dict[str, Rule] = {}  # a rule repeated verbatim yields one lane, its first occurrence
+        unique: dict[str, Rule] = {}
         for rule in self._rule_spans(prompt):
             unique.setdefault(rule.text, rule)
         candidates = list(unique.values())
         blocks = self._eligible_blocks(prompt, candidates)
-        # Rules and blocks share one lane list in prompt order so every kind stays reachable at a small budget.
         lanes: list[Rule | Block] = sorted([*candidates, *blocks], key=lambda lane: lane.start)
         if not lanes:
             return []
 
-        # Breadth first: every selected lane gets a mutant before any lane gets a second one.
         if len(lanes) > max_mutants:
             step = len(lanes) / max_mutants
             lanes = [lanes[int(i * step)] for i in range(max_mutants)]
 
-        # Specific operators first: each returns None when its pattern is absent, so the generic rotation fills in.
-        specific = (self._threshold_mutant, self._exception_mutant, self._flip_mutant, self._scope_mutant)
-        rotating = (self._delete_mutant, self._invert_mutant, self._weaken_mutant)
+        def replace(table: tuple[tuple[re.Pattern[str], str], ...], operator_name: str, verb: str) -> Operator:
+            return partial(self._replace_mutant, replacements=table, operator_name=operator_name, verb=verb)
+
+        specific = (
+            self._threshold_mutant,
+            replace(((self.EXCEPTION_PATTERN, ""),), "drop_exception", "Dropped"),
+            replace(self.COMPARATOR_REPLACEMENTS, "flip_comparator", "Flipped"),
+            replace(self.SCOPE_REPLACEMENTS, "scope_swap", "Narrowed"),
+        )
+        rotating = (
+            self._delete_mutant,
+            replace(self.NEGATION_REPLACEMENTS, "invert_negation", "Inverted"),
+            replace(self.WEAKENING_REPLACEMENTS, "weaken_modal", "Weakened"),
+        )
         per_lane = []
         for i, lane in enumerate(lanes):
             if isinstance(lane, Block):
