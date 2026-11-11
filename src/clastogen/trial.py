@@ -6,7 +6,6 @@ relies on the same private API.
 """
 
 import sys
-from collections.abc import Callable
 
 import pytest
 from _pytest.logging import caplog_handler_key
@@ -40,16 +39,22 @@ def _reset_function_fixtures(item: pytest.Item) -> None:
         caplog_handler.clear()
 
 
-def soft_failed(clear: bool = False) -> bool:
+def soft_failed(config: pytest.Config, clear: bool = False) -> bool:
     """True when pytest-check recorded a soft failure; it raises only in makereport, so a trial must read it here.
 
     clear drops the recorded failures, so a trial's failures are not charged to the real test. Other soft-assert plugins are not detected.
     """
+    plugin = sys.modules.get("pytest_check.plugin")
     check_log = sys.modules.get("pytest_check.check_log")
-    if check_log is None or not check_log.any_failures():
+    # a blocked plugin (-p no:check) is registered as None, so is_registered(None) would be True
+    if plugin is None or check_log is None or not config.pluginmanager.is_registered(plugin):
         return False
-    if clear:
-        check_log.clear_failures()
+    any_failures = getattr(check_log, "any_failures", None)
+    clear_failures = getattr(check_log, "clear_failures", None)
+    if any_failures is None or not any_failures():
+        return False
+    if clear and clear_failures is not None:
+        clear_failures()
     return True
 
 
@@ -63,7 +68,7 @@ def run_trial(item: pytest.Item) -> bool:
         _reset_function_fixtures(item)
         stage = "unexpected execution error"
         item.runtest()
-        return not soft_failed()
+        return not soft_failed(item.config)
     except pytest.exit.Exception:
         raise
     except (pytest.skip.Exception, pytest.xfail.Exception) as exc:
@@ -72,29 +77,11 @@ def run_trial(item: pytest.Item) -> bool:
         if stage == _RESET_FAILED:
             raise TrialError(f"{stage}: {type(exc).__name__}") from exc
         return False
+    except ExceptionGroup as exc:
+        if stage == _RESET_FAILED or exc.split(AssertionError)[1] is not None:
+            raise TrialError(f"{stage}: {type(exc).__name__}") from exc
+        return False
     except (Exception, SystemExit) as exc:
         raise TrialError(f"{stage}: {type(exc).__name__}") from exc
     finally:
-        soft_failed(clear=True)
-
-
-class TrialBudget:
-    """Counts the trials one process runs against --clastogen-max-calls; limit None means no cap.
-
-    The original test call is not counted. A unit (the baseline, one mutant or one probe sample set) starts only when
-    its worst case fits in what is left, so the cap is never exceeded.
-    """
-
-    def __init__(self, limit: int | None = None) -> None:
-        self.remaining = limit
-
-    def fits(self, units: int) -> bool:
-        return self.remaining is None or self.remaining >= units
-
-    def wrap(self, trial: Callable[[], bool]) -> Callable[[], bool]:
-        def counted() -> bool:
-            if self.remaining is not None:
-                self.remaining -= 1
-            return trial()
-
-        return counted
+        soft_failed(item.config, clear=True)

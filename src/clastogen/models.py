@@ -3,12 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, TypedDict, get_args
 
 from clastogen.stats.types import check_error_rates, check_int, check_unit
-from clastogen.trial import TrialBudget
 
 
 class MutantStatus(StrEnum):
@@ -239,6 +239,28 @@ class RunPlan:
     mutants: int
     suppressed: int
     calls: int
+
+
+class TrialBudget:
+    """Counts the trials one process runs against --clastogen-max-calls; limit None means no cap.
+
+    The original test call is not counted. A unit (the baseline, one mutant or one probe sample set) starts only when
+    its worst case fits in what is left, so the cap is never exceeded.
+    """
+
+    def __init__(self, limit: int | None = None) -> None:
+        self.remaining = limit
+
+    def fits(self, units: int) -> bool:
+        return self.remaining is None or self.remaining >= units
+
+    def wrap(self, trial: Callable[[], bool]) -> Callable[[], bool]:
+        def counted() -> bool:
+            if self.remaining is not None:
+                self.remaining -= 1
+            return trial()
+
+        return counted
 
 
 @dataclass

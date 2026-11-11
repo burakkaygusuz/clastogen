@@ -27,7 +27,6 @@ from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
 from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
 from clastogen.stats.types import SPRTConfig
-from clastogen.trial import TrialBudget
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +189,7 @@ def _canary_passes(trial: Callable[[], bool], target: str) -> bool:
 
 
 def _apply_canary(
-    trial: Callable[[], bool], params: ClastogenParams, budget: TrialBudget, evaluated: list[MutantExecution]
+    trial: Callable[[], bool], params: ClastogenParams, evaluated: list[MutantExecution]
 ) -> list[MutantExecution]:
     """Turns the survivors of a test that killed nothing into ERROR when it also passes on an empty prompt.
 
@@ -200,7 +199,6 @@ def _apply_canary(
     if (
         any(e.status == MutantStatus.KILLED for e in evaluated)
         or not any(e.status in unproven for e in evaluated)
-        or not budget.fits(CANARY_RUNS)
         or not _canary_passes(trial, params.target)
     ):
         return evaluated
@@ -258,7 +256,7 @@ def run_mutation(
     if not pending:
         return MutationRun([], executions, constraints, unmutated)
 
-    if not state.budget.fits(_baseline_calls(params) + params.max_steps):
+    if not state.budget.fits(_baseline_calls(params) + params.max_steps + CANARY_RUNS):
         unmeasured = [_execution(test_id, m, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED) for m in pending]
         return MutationRun([], executions + unmeasured, constraints, unmutated)
 
@@ -276,16 +274,14 @@ def run_mutation(
     sprt = SPRT(config)
     evaluated: list[MutantExecution] = []
     for mutant in pending:
-        if not state.budget.fits(params.max_steps):
+        if not state.budget.fits(params.max_steps + CANARY_RUNS):
             evaluated.append(_execution(test_id, mutant, MutantStatus.UNMEASURED, error=_BUDGET_EXHAUSTED))
             continue
         execution = _evaluate_mutant(test_id, trial, mutant, sprt)
         if execution.status == MutantStatus.KILLED:
             state.killed_mutants.add(mutant.id)
         evaluated.append(execution)
-    return MutationRun(
-        baselines, executions + _apply_canary(trial, params, state.budget, evaluated), constraints, unmutated
-    )
+    return MutationRun(baselines, executions + _apply_canary(trial, params, evaluated), constraints, unmutated)
 
 
 def _sample(test_id: str, trial: Callable[[], bool], samples: int, mutant: Mutant | None = None) -> list[bool] | None:

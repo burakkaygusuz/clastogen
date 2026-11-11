@@ -171,7 +171,7 @@ def _matrix(results: Sequence[MutantExecution], executions: Sequence[MutantExecu
 _STATUS_ORDER = {status: i for i, status in enumerate(STATUS_LABELS)}
 
 
-def _by_status(results: Sequence[MutantExecution]) -> list[MutantExecution]:
+def by_status(results: Sequence[MutantExecution]) -> list[MutantExecution]:
     return sorted(results, key=lambda r: _STATUS_ORDER[r.status])
 
 
@@ -264,7 +264,7 @@ def render_html(
     summary: MutationSummary, executions: Sequence[MutantExecution], baselines: Sequence[BaselineRecord]
 ) -> str:
     """Renders a self-contained HTML report with inline SVG/CSS charts and no external assets."""
-    results = _by_status(summary.results)
+    results = by_status(summary.results)
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -289,7 +289,7 @@ def _code(text: str) -> str:
 def _markdown_table(summary: MutationSummary, executions: Sequence[MutantExecution]) -> list[str]:
     passed_in = survivor_tests(executions)
     rows = ["| Status | Mutant | Change | Tests |", "| --- | --- | --- | --- |"]
-    for r in _by_status(summary.results):
+    for r in by_status(summary.results):
         tests = ", ".join(t.split("::")[-1] for t in _tests_shown(r, passed_in))
         change = f"{r.description} [{r.error}]" if r.error else r.description
         if hint := kill_hint(r):

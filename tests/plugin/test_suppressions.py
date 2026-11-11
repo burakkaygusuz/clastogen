@@ -42,6 +42,7 @@ def test_load_suppressions_toml_format(tmp_path: Path) -> None:
         ("suppressions = 'abcdefabcdef'\n", "expected \\[\\[suppressions\\]\\] tables"),
         ("suppressions = ['abcdefabcdef']\n", "must be a table"),
         ("[[suppressions]]\nreason = 'x'\n", "missing 'mutant_id'"),
+        ("[[suppressions]]\nmutant_id = 123\nreason = 'x'\n", "'mutant_id' must be a string"),
         ("[[suppressions]]\nmutant_id = 'abcdefabcdef'\n", "non-empty 'reason'"),
         ("[[suppressions]\n", "Cannot read"),
         ("[[suppression]]\nmutant_id = 'abcdefabcdef'\nreason = 'x'\n", "Unknown top-level key.*suppression"),
@@ -106,13 +107,20 @@ def test_a_suppression_matching_a_mutant_is_not_warned_about(pytester: pytest.Py
     assert "Suppressions matching no mutant" not in out
 
 
-def test_clastogen_dir_outside_the_rootdir_fails_instead_of_being_ignored(pytester: pytest.Pytester) -> None:
+def test_clastogen_dir_outside_the_rootdir_belongs_to_another_project(pytester: pytest.Pytester) -> None:
     _write_suppressions(pytester.path, "")
     (pytester.path / "sub").mkdir()
     result = pytester.runpytest("--clastogen", "--rootdir=sub")
 
-    assert result.ret == pytest.ExitCode.USAGE_ERROR
-    result.stderr.fnmatch_lines(["*is ignored: Clastogen reads .clastogen/ only from the pytest rootdir*"])
+    assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED, result.stderr.str()
+
+
+def test_clastogen_dir_next_to_unmarked_tests_is_fine(pytester: pytest.Pytester) -> None:
+    sub = _nested_project(pytester)
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    result = pytester.runpytest("--clastogen")
+
+    assert result.ret == pytest.ExitCode.OK
 
 
 def test_clastogen_dir_of_a_path_argument_fails_even_when_the_rootdir_has_one(pytester: pytest.Pytester) -> None:
@@ -165,7 +173,9 @@ def _nested_project(pytester: pytest.Pytester) -> Path:
     sub = pytester.path / "tests" / "sub"
     sub.mkdir(parents=True)
     _write_suppressions(sub, "")
-    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    (sub / "test_a.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_a:P")\ndef test_a(): pass\nP = "x"\n'
+    )
     return sub
 
 
@@ -211,12 +221,31 @@ def test_nested_check_holds_with_a_symlinked_rootdir(pytester: pytest.Pytester) 
     assert result.ret == pytest.ExitCode.OK
 
 
-def test_nested_clastogen_dir_fails_under_xdist(pytester: pytest.Pytester) -> None:
-    _nested_project(pytester)
+def test_nested_clastogen_dir_fails_the_marked_test_under_xdist(pytester: pytest.Pytester) -> None:
+    sub = _nested_project(pytester)
+    (sub / "test_a.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_a:P")\ndef test_a(): print("BODY RAN")\nP = "x"\n'
+    )
     result = pytester.runpytest("--clastogen", "-n", "2")
 
-    assert result.ret == pytest.ExitCode.USAGE_ERROR
-    assert "is ignored" in result.stdout.str() + result.stderr.str()
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    out = result.stdout.str()
+    assert "is ignored" in out
+    assert "BODY RAN" not in out
+
+
+def test_clastogen_dir_next_to_unmarked_tests_is_fine_under_xdist(pytester: pytest.Pytester) -> None:
+    sub = pytester.path / "tests" / "sub"
+    sub.mkdir(parents=True)
+    pytester.makeini("[pytest]\n")
+    _write_suppressions(sub, "")
+    (sub / "test_a.py").write_text("def test_a(): pass\n")
+    (pytester.path / "test_b.py").write_text(
+        'import pytest\n@pytest.mark.clastogen(target="test_b:P")\ndef test_b(): pass\nP = "x"\n'
+    )
+    result = pytester.runpytest("--clastogen", "-n", "2")
+
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
 
 
 def test_clean_layout_passes_under_xdist(pytester: pytest.Pytester) -> None:

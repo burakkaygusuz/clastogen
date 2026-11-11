@@ -1,4 +1,6 @@
 import math
+import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
@@ -99,3 +101,8 @@ def test_fixed_sample_size_is_none_beyond_the_sample_cap() -> None:
     config = SPRTConfig.from_absolute_drop(p0=11 / 12, delta=0.01, alpha=0.05, beta=0.10, max_steps=20)
 
     assert fixed_sample_size(config) is None
+
+
+def test_importing_the_stats_does_not_load_pytest() -> None:
+    code = "import sys, clastogen.stats.sprt; assert 'pytest' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], check=True)  # noqa: S603

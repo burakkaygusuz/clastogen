@@ -7,9 +7,8 @@ import httpx
 import pytest
 
 from clastogen.exceptions import TrialError, TrialSkipped
-from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus
+from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
 from clastogen.runner import _canary_passes, measure_baseline, run_mutation, run_oracle
-from clastogen.trial import TrialBudget
 
 PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
 TARGET = f"{__name__}:PROMPT"

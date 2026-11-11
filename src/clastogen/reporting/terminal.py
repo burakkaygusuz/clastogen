@@ -17,7 +17,7 @@ from clastogen.models import (
     RunPlan,
     snippet_covers,
 )
-from clastogen.reporting.render import STATUS_LABELS, kill_hint
+from clastogen.reporting.render import STATUS_LABELS, by_status, kill_hint
 from clastogen.reporting.scoring import (
     MERGE_NOTE,
     behavior_label,
@@ -101,12 +101,11 @@ def _write_mutants(
 ) -> None:
     """Prints one block per mutant in STATUS_LABELS order: status line, description and the assertion that would kill it."""
     verbose = terminalreporter.config.get_verbosity() > 0
-    order = list(STATUS_LABELS)
     show_target = len({r.target for r in summary.results}) > 1
     name = _test_names(executions)
     passed_in = {m: [name[t] for t in tests] for m, tests in survivor_tests(executions).items()}
 
-    for r in sorted(summary.results, key=lambda r: order.index(r.status)):
+    for r in by_status(summary.results):
         details = [f"[{r.mutant_id}]", *_run_details(r, show_target, verbose)]
         if r.status == MutantStatus.KILLED:
             details.append(f"by {name[r.test_id]}")
@@ -270,8 +269,7 @@ def _write_nothing_to_report(terminalreporter: pytest.TerminalReporter, state: C
 
 def write(terminalreporter: pytest.TerminalReporter, state: ClastogenPluginState, summary: MutationSummary) -> None:
     """Writes the summary of a --clastogen session, or the reason there is none."""
-    raw_fail_under = terminalreporter.config.getoption("--clastogen-fail-under", None)
-    fail_under = None if raw_fail_under is None else float(raw_fail_under)
+    fail_under = terminalreporter.config.getoption("--clastogen-fail-under", None)
     if summary.total == 0 and all(b.stable for b in state.baselines):
         _write_nothing_to_report(terminalreporter, state)
     else:

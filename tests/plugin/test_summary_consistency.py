@@ -5,7 +5,7 @@ import json
 import pytest
 from pytest_check import check
 
-from tests.plugin import AGENT
+from tests.plugin import AGENT, WEAK
 
 _UNRELATED = """
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
@@ -58,7 +58,6 @@ import pytest, agent
 
 calls = {"n": 0}
 
-# test_strong runs last: once it kills every mutant, later tests have nothing pending and skip the baseline.
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_flaky():
     calls["n"] += 1
@@ -72,18 +71,17 @@ def test_weak():
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)
 def test_strong():
     assert "never approve refunds over $50." in agent.ask()
-    assert "must always verify identity" in agent.ask()
 """,
     )
     json_out = pytester.path / "out.json"
-    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}", "--clastogen-fail-under=101")
+    result = pytester.runpytest("--clastogen", f"--clastogen-json={json_out}", "--clastogen-fail-under=100")
     stdout = result.stdout.str()
     data = json.loads(json_out.read_text(encoding="utf-8"))
 
     score = data["mutation_score"]
     assert score is not None
     assert f"Mutation Score: {score:.1f}% (" in stdout
-    assert f"Clastogen fail-under 101.0%: FAILED (score {score:.1f}%)" in stdout
+    assert f"Clastogen fail-under 100.0%: FAILED (score {score:.1f}%)" in stdout
     assert result.ret == pytest.ExitCode.TESTS_FAILED, result.stdout.str()
 
     assert sorted(b["stable"] for b in data["baselines"]) == [False, True, True]
@@ -275,3 +273,42 @@ def test_secrets():
     result.assert_outcomes(passed=1)
     stdout = result.stdout.str()
     assert "Mutation Score: 100.0% (1 of 1 killed)" in stdout
+
+
+def test_unwritable_report_fails_the_run_but_keeps_the_other_reports_and_the_gate(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_ok="import pytest, agent\n" + _STRONG)
+    (pytester.path / "bad.json").mkdir()
+    result = pytester.runpytest(
+        "--clastogen", "--clastogen-json=bad.json", "--clastogen-md=out.md", "--clastogen-fail-under=50"
+    )
+    out = result.stdout.str()
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, out
+    assert "cannot write --clastogen-json bad.json" in out
+    assert "Mutation Score:" in out
+    assert (pytester.path / "out.md").exists()
+    assert "Traceback" not in out
+
+
+def test_unwritable_report_and_a_score_below_fail_under_are_both_reported(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_weak=WEAK)
+    (pytester.path / "bad.json").mkdir()
+    result = pytester.runpytest("--clastogen", "--clastogen-json=bad.json", "--clastogen-fail-under=50")
+    out = result.stdout.str()
+    assert result.ret == pytest.ExitCode.TESTS_FAILED, out
+    assert "cannot write --clastogen-json bad.json" in out
+    assert "Clastogen fail-under 50.0%: FAILED (score 0.0%)" in out
+
+
+def test_unwritable_report_is_shown_when_no_test_is_selected(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_weak=WEAK)
+    (pytester.path / "bad.json").mkdir()
+    result = pytester.runpytest("--clastogen", "--clastogen-json=bad.json", "-k", "nothing_matches")
+    assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
+    assert "cannot write --clastogen-json bad.json" in result.stdout.str()
+
+
+def test_fail_under_is_not_reported_when_no_test_is_selected(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(agent=AGENT, test_weak=WEAK)
+    result = pytester.runpytest("--clastogen", "--clastogen-fail-under=50", "-k", "nothing_matches")
+    assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
+    assert "fail-under 50.0%: FAILED" not in result.stdout.str()

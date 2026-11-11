@@ -143,7 +143,7 @@ You can use `pytest --clastogen -n 4`. Each worker sends its records with the te
 
 ## Trial budget
 
-`--clastogen-max-calls N` caps the trials that a run makes. The original test call is not counted. A unit starts only when its worst case fits in what is left. The setup unit is the 9 baseline runs (only without `p0`) and one mutant's `max_steps` runs, so a test starts only when one mutant can still be funded after the baseline. A mutant unit is `max_steps` runs, the canary unit is 3 runs and is skipped when it does not fit, and a probe unit is `oracle_samples` runs. A unit that does not fit leaves its mutants `UNMEASURED`; a probe that does not fit records nothing for its mutants. `--collect-only` shows the uncapped worst case.
+`--clastogen-max-calls N` caps the trials that a run makes. The original test call is not counted. A unit starts only when its worst case fits in what is left. The setup unit is the 9 baseline runs (only without `p0`), one mutant's `max_steps` runs and the 3 canary runs, so a test starts only when one mutant and the canary can still be funded after the baseline. A mutant unit is `max_steps` runs plus the 3 canary runs that stay reserved, so the canary always fits, and a probe unit is `oracle_samples` runs. A unit that does not fit leaves its mutants `UNMEASURED`; a probe that does not fit records nothing for its mutants. `--collect-only` shows the uncapped worst case.
 The budget is shared first-come across all tests in the run: a probe that runs first can spend the whole cap and leave a later mutation test `UNMEASURED`.
 
 With xdist, the cap is split statically: each worker gets `N // workers`, and it must be at least the number of workers. An idle worker's share is unused, so a run with one busy test on two workers can spend at most half of `N`. A per-worker share too small for one unit measures nothing, and the run still exits 0 unless `--clastogen-fail-under` is set.
@@ -161,6 +161,8 @@ reason = "Model refuses large refunds regardless of the prompt"
 ```
 
 If the file is not correct, a `--clastogen` run stops with a usage error. Runs without `--clastogen` do not read the file.
+
+A `.clastogen/` directory in any other directory below the `rootdir` would be ignored, so a `--clastogen` run stops with a usage error when it finds one in the invocation directory, a path argument, or the directory of a test with the `clastogen` marker and every directory between that test and the `rootdir`. Under pytest-xdist the invocation directory and path arguments stop the run the same way, but a marked test's directory fails only that test, before its body runs. A `.clastogen/` outside the `rootdir` is treated as another project's and is not read.
 
 An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mutants` or the tests you ran) is listed in a warning; the exit code does not change.
 

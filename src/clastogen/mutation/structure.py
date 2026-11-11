@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 _HEADING = re.compile(r"^(#{1,6})[ \t]+(\S.*)$")
+_EXAMPLE_OPEN = re.compile(r"<example", re.IGNORECASE)
 _XML_TAG = re.compile(r"<([A-Za-z][\w-]*)(?:\s[^<>]*)?>|</([A-Za-z][\w-]*)>")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _LINE = re.compile(r"[^\n]+\n?|\n")
@@ -25,17 +26,21 @@ def _xml_blocks(prompt: str) -> list[Block]:
     """Pairs XML tags with a stack: a close tag matches the nearest open tag of its name and drops the tags opened after it."""
     blocks: list[Block] = []
     open_tags: list[tuple[str, int, int]] = []
+    stack_index: dict[str, list[int]] = {}
     for m in _XML_TAG.finditer(prompt):
         if m[1]:
+            stack_index.setdefault(m[1], []).append(len(open_tags))
             open_tags.append((m[1], m.start(), m.end()))
             continue
-        i = next((i for i in range(len(open_tags) - 1, -1, -1) if open_tags[i][0] == m[2]), None)
-        if i is None:
+        if not stack_index.get(m[2]):
             continue
+        i = stack_index[m[2]][-1]
         name, start, content_start = open_tags[i]
+        for dropped, _, _ in open_tags[i:]:
+            stack_index[dropped].pop()
         del open_tags[i:]
         is_example = name.lower().startswith("example")
-        if not (is_example and "<example" in prompt[content_start : m.start()].lower()):
+        if not (is_example and _EXAMPLE_OPEN.search(prompt, content_start, m.start())):
             blocks.append(Block("example" if is_example else "section", start, m.end(), f"<{name}>"))
     return blocks
 

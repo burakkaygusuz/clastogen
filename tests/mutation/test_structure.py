@@ -108,3 +108,17 @@ def test_nested_same_name_tags_pair_by_depth() -> None:
 
 def test_only_a_newline_ends_a_line() -> None:
     assert find_blocks("text\x0c# Not a heading\nbody") == []
+
+
+def test_unmatched_close_tags_scale_linearly() -> None:
+    k = 20_000
+    start = time.perf_counter()
+    assert find_blocks("<a>" * k + "</b>" * k) == []
+    assert time.perf_counter() - start < 1
+
+
+def test_nested_same_name_example_tags_scale_linearly() -> None:
+    k = 50_000
+    start = time.perf_counter()
+    find_blocks("<example>" * k + "</example>" * k)
+    assert time.perf_counter() - start < 1

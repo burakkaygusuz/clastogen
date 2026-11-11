@@ -310,8 +310,12 @@ class PromptMutator:
         unique: dict[str, Mutant] = {}
         for m in [*self.custom_mutants(prompt), *self._builtin_mutants(prompt, max_mutants)]:
             unique.setdefault(m.mutated_prompt, m)
-        if len({m.id for m in unique.values()}) != len(unique):
-            raise ValueError("Two different mutants of one prompt share a mutant ID")
+        by_id: dict[str, Mutant] = {}
+        for m in unique.values():
+            if (other := by_id.setdefault(m.id, m)) is not m:
+                raise ValueError(
+                    f"Two different mutants of one prompt share mutant ID {m.id}: '{other.operator_name}' and '{m.operator_name}'"
+                )
         return list(unique.values())
 
     def _builtin_mutants(self, prompt: str, max_mutants: int) -> Sequence[Mutant]:

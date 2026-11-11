@@ -271,5 +271,5 @@ def test_two_different_mutants_with_one_id_are_rejected(monkeypatch: pytest.Monk
     b = Mutant.create("m:P", "op", "x", "y", "prompt two", "d")
     monkeypatch.setattr(mutator, "_builtin_mutants", lambda prompt, max_mutants: [a, b])
 
-    with pytest.raises(ValueError, match="share a mutant ID"):
+    with pytest.raises(ValueError, match=r"share mutant ID \w+: 'op' and 'op'"):
         mutator.generate_mutants("anything", 5)

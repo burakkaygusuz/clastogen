@@ -108,7 +108,7 @@ def test_strong():
 
 @pytest.mark.parametrize(
     ("cap", "trials", "unproven", "unmeasured"),
-    [(4, 0, 0, 2), (5, 5, 1, 1), (8, 8, 0, 1), (12, 10, 2, 0), (13, 13, 0, 0)],
+    [(4, 0, 0, 2), (7, 0, 0, 2), (8, 8, 0, 1), (12, 8, 0, 1), (13, 13, 0, 0)],
 )
 def test_canary_trials_count_against_the_budget_with_p0_given(
     pytester: pytest.Pytester, cap: int, trials: int, unproven: int, unmeasured: int

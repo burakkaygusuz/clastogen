@@ -17,6 +17,7 @@ from clastogen.models import (
     MutationSummary,
     OracleRecord,
     RecordsPayload,
+    TrialBudget,
 )
 from clastogen.mutation.injection import resolve_target
 from clastogen.mutation.mutator import PromptMutator
@@ -25,7 +26,7 @@ from clastogen.reporting.render import render_html, render_json, render_markdown
 from clastogen.reporting.scoring import below_threshold, summarize
 from clastogen.runner import plan_test, run_mutation, run_oracle, to_payload
 from clastogen.suppressions import load_suppressions
-from clastogen.trial import TrialBudget, run_trial, soft_failed
+from clastogen.trial import run_trial, soft_failed
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +106,9 @@ class _RecordCollector:
 
 
 def _fail_on_ignored_clastogen_dirs(directories: set[Path], rootpath: Path) -> None:
-    """Raises when a directory other than the rootdir holds a .clastogen/, which Clastogen would ignore silently."""
+    """Raises when a directory below the rootdir holds a .clastogen/, which Clastogen would ignore silently."""
     for directory in sorted(directories):
-        if directory.resolve() != rootpath.resolve() and (directory / ".clastogen").is_dir():
+        if rootpath.resolve() in directory.resolve().parents and (directory / ".clastogen").is_dir():
             raise pytest.UsageError(
                 f"'{directory / '.clastogen'}' is ignored: Clastogen reads .clastogen/ only from the pytest rootdir '{rootpath}'. "
                 "Move it there or set the rootdir (--rootdir, or an ini file in the project root)."
@@ -148,6 +149,9 @@ def pytest_configure(config: pytest.Config) -> None:
     limit: int | None = config.getoption("--clastogen-max-calls", None)
     if limit is not None and limit < 1:
         raise pytest.UsageError(f"--clastogen-max-calls must be at least 1, got {limit}")
+    fail_under: float | None = config.getoption("--clastogen-fail-under", None)
+    if fail_under is not None and not 0 <= fail_under <= 100:
+        raise pytest.UsageError(f"--clastogen-fail-under must be between 0 and 100, got {fail_under}")
     workers = len(config.getoption("tx", ()))
     if limit is not None and workers > limit:
         raise pytest.UsageError(f"--clastogen-max-calls {limit} is below the {workers} xdist workers; each needs one")
@@ -186,19 +190,18 @@ def _parse_marker(item: pytest.Item, marker: pytest.Mark) -> tuple[ClastogenPara
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
     """Runs the mutation loop after the real test passed; a failing test propagates from the yield untouched."""
-    res = yield
-
-    if not item.config.getoption("--clastogen", False):
-        return res
-
-    marker = item.get_closest_marker("clastogen")
-    if not marker or soft_failed():
-        return res
-
-    if isinstance(item, pytest.Function) and "subtests" in item.fixturenames:
+    marker = item.get_closest_marker("clastogen") if item.config.getoption("--clastogen", False) else None
+    if marker and isinstance(item, pytest.Function) and "subtests" in item.fixturenames:
         raise pytest.UsageError(
             f"Test '{item.nodeid}' uses the subtests fixture, which Clastogen cannot rerun as a trial."
         )
+    if marker and _is_xdist_worker(item.config):
+        _check_nested_clastogen_dirs(item.config, {item.path.parent})
+    res = yield
+
+    if not marker or soft_failed(item.config):
+        return res
+
     params, prompt_text = _parse_marker(item, marker)
     state = item.config.stash[STATE_KEY]
     trial = state.budget.wrap(partial(run_trial, item))
@@ -228,13 +231,6 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, None, None]:
 @pytest.hookimpl(optionalhook=True)
 def pytest_configure_node(node) -> None:  # noqa: ANN001
     node.workerinput["clastogen_repeats"] = node.workerinput["workercount"] if node.config.option.dist == "each" else 1
-
-
-@pytest.hookimpl(optionalhook=True)
-def pytest_xdist_node_collection_finished(node, ids: list[str]) -> None:  # noqa: ANN001
-    config = node.config
-    if config.getoption("--clastogen", False):
-        _check_nested_clastogen_dirs(config, {(config.rootpath / nodeid.partition("::")[0]).parent for nodeid in ids})
 
 
 def _check_custom_mutants(session: pytest.Session, state: ClastogenPluginState) -> None:
@@ -280,9 +276,13 @@ def _collect_preview(session: pytest.Session, state: ClastogenPluginState) -> No
     for item in session.items:
         if marker := item.get_closest_marker("clastogen"):
             params, prompt_text = _parse_marker(item, marker)
-            state.preview.append(
-                plan_test(item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle, state.custom_mutants)
-            )
+            try:
+                plan = plan_test(
+                    item.nodeid, params, prompt_text, state.suppressed_mutants, with_oracle, state.custom_mutants
+                )
+            except ValueError as exc:
+                raise pytest.UsageError(f"{exc} (used by '{item.nodeid}')") from exc
+            state.preview.append(plan)
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
@@ -294,7 +294,9 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     state = config.stash[STATE_KEY]
     _count_tests(session, state)
     if not _is_xdist_worker(config):
-        _check_nested_clastogen_dirs(config, {item.path.parent for item in session.items})
+        _check_nested_clastogen_dirs(
+            config, {item.path.parent for item in session.items if item.get_closest_marker("clastogen")}
+        )
     _check_custom_mutants(session, state)
     if config.option.collectonly:
         _collect_preview(session, state)
@@ -308,9 +310,9 @@ def _write_report(path: str, text: str) -> None:
 
 def _failure_message(summary: MutationSummary, fail_under: float | None) -> str | None:
     """The first of: fail-under missed, mutant errors, unmeasured mutants (the last only with fail-under); None when none."""
-    if fail_under is not None and below_threshold(summary, float(fail_under)):
+    if fail_under is not None and below_threshold(summary, fail_under):
         detail = "no measurable mutants" if summary.score is None else f"score {summary.score:.1f}%"
-        return f"Clastogen fail-under {float(fail_under):.1f}%: FAILED ({detail})"
+        return f"Clastogen fail-under {fail_under:.1f}%: FAILED ({detail})"
     if errors := summary.counts[MutantStatus.ERROR]:
         return f"Clastogen: {errors} mutant error(s)"
     if fail_under is not None and (unmeasured := summary.counts[MutantStatus.UNMEASURED]):
@@ -335,21 +337,27 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     summary = summarize(state.executions, state.constraints, state.oracle, state.unmutated, state.tests)
     state.summary = summary
 
+    problems: list[str] = []
     for option, render in (
         ("--clastogen-json", render_json),
         ("--clastogen-html", render_html),
         ("--clastogen-md", render_markdown),
     ):
         if path := session.config.getoption(option, None):
-            _write_report(path, render(summary, state.executions, state.baselines))
+            try:
+                _write_report(path, render(summary, state.executions, state.baselines))
+            except OSError as exc:
+                problems.append(f"cannot write {option} {path}: {exc}")
 
-    message = _failure_message(summary, session.config.getoption("--clastogen-fail-under", None))
-    if message is None:
+    if session.exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED) and (
+        failure := _failure_message(summary, session.config.getoption("--clastogen-fail-under", None))
+    ):
+        problems.append(failure)
+    if not problems:
         return
+    message = "; ".join(problems)
     if session.exitstatus == pytest.ExitCode.OK:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
-    if session.exitstatus != pytest.ExitCode.TESTS_FAILED:
-        return
     prev = session.shouldfail
     session.shouldfail = f"{prev}; {message}" if isinstance(prev, str) and prev else message
 

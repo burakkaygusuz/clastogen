@@ -26,7 +26,7 @@ def _trials(pytester: pytest.Pytester) -> int:
 
 @pytest.mark.parametrize(
     ("cap", "trials", "killed", "unmeasured", "score"),
-    [(5, 0, 0, 2, None), (12, 0, 0, 2, None), (14, 11, 1, 1, 100.0), (30, 13, 2, 0, 100.0)],
+    [(5, 0, 0, 2, None), (12, 0, 0, 2, None), (17, 11, 1, 1, 100.0), (30, 13, 2, 0, 100.0)],
 )
 def test_serial_run_never_exceeds_the_cap(
     pytester: pytest.Pytester, cap: int, trials: int, killed: int, unmeasured: int, score: float | None
@@ -70,8 +70,8 @@ def test_probe_needs_its_baseline_and_one_mutant_in_budget(
 
 def test_unmeasured_fails_the_run_only_with_fail_under(pytester: pytest.Pytester) -> None:
     pytester.makepyfile(agent=AGENT, test_budget=_TEST)
-    lenient = pytester.runpytest("--clastogen", "--clastogen-max-calls=14")
-    strict = pytester.runpytest("--clastogen", "--clastogen-max-calls=14", "--clastogen-fail-under=50")
+    lenient = pytester.runpytest("--clastogen", "--clastogen-max-calls=17")
+    strict = pytester.runpytest("--clastogen", "--clastogen-max-calls=17", "--clastogen-fail-under=50")
     assert lenient.ret == pytest.ExitCode.OK
     assert strict.ret == pytest.ExitCode.TESTS_FAILED
     assert "1 mutant(s) unmeasured within --clastogen-max-calls" in strict.stdout.str()
@@ -100,3 +100,18 @@ def test_max_calls_below_one_is_a_usage_error(pytester: pytest.Pytester) -> None
     result = pytester.runpytest("--clastogen", "--clastogen-max-calls=0")
     assert result.ret == pytest.ExitCode.USAGE_ERROR
     assert "--clastogen-max-calls must be at least 1" in result.stderr.str()
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-5", "150"])
+def test_fail_under_outside_0_to_100_is_a_usage_error(pytester: pytest.Pytester, value: str) -> None:
+    pytester.makepyfile(agent=AGENT, test_budget=_TEST)
+    result = pytester.runpytest("--clastogen", f"--clastogen-fail-under={value}")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert "--clastogen-fail-under must be between 0 and 100" in result.stderr.str()
+
+
+@pytest.mark.parametrize("value", ["0", "100"])
+def test_fail_under_accepts_the_boundaries(pytester: pytest.Pytester, value: str) -> None:
+    pytester.makepyfile(agent=AGENT, test_budget=_TEST)
+    result = pytester.runpytest("--clastogen", f"--clastogen-fail-under={value}")
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str() + result.stderr.str()
