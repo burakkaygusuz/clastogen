@@ -163,7 +163,7 @@ reason = "Model refuses large refunds regardless of the prompt"
 
 If the file is not correct, a `--clastogen` run stops with a usage error. Runs without `--clastogen` do not read the file.
 
-A `.clastogen/` directory in any other directory below the `rootdir` would be ignored, so a `--clastogen` run stops with a usage error when it finds one in the invocation directory, a path argument, or the directory of a test with the `clastogen` marker and every directory between that test and the `rootdir`. Under pytest-xdist the invocation directory and path arguments stop the run the same way, but a marked test's directory fails only that test, before its body runs. A `.clastogen/` outside the `rootdir` is treated as another project's and is not read.
+A `.clastogen/` directory in any other directory below the `rootdir` would be ignored, so a `--clastogen` run stops with a usage error when it finds one in the invocation directory, a path argument, or the directory of a test with the `clastogen` marker and every directory between that test and the `rootdir`. Under pytest-xdist the invocation directory and path arguments stop the run the same way, but one found only through marked tests does not stop the run: each marked test in or below its directory fails before its body runs. A `.clastogen/` outside the `rootdir` is treated as another project's and is not read.
 
 An ID that matches no mutant in the run (a stale ID, or a mutant outside `max_mutants` or the tests you ran) is listed in a warning; the exit code does not change.
 
