@@ -4,7 +4,6 @@ import math
 from collections.abc import Callable, Sequence
 from functools import cache
 
-from clastogen.models import MIN_BASELINE_RATE
 from clastogen.stats.types import Decision, SPRTConfig, SPRTResult
 
 logger = logging.getLogger(__name__)
@@ -62,17 +61,6 @@ def fixed_sample_size(config: SPRTConfig) -> tuple[int, int] | None:
     return None
 
 
-def config_from_baseline(
-    outcomes: Sequence[bool], *, delta: float, max_steps: int, alpha: float = 0.05, beta: float = 0.10
-) -> SPRTConfig | None:
-    """Builds the SPRT config from baseline outcomes, or None when the raw pass rate is below MIN_BASELINE_RATE."""
-    if sum(outcomes) / len(outcomes) < MIN_BASELINE_RATE:
-        return None
-    return SPRTConfig.from_absolute_drop(
-        p0=estimate_p0(outcomes), delta=delta, alpha=alpha, beta=beta, max_steps=max_steps
-    )
-
-
 class SPRT:
     """Wald's Sequential Probability Ratio Test engine for Bernoulli trials with early stopping."""
 
@@ -88,9 +76,12 @@ class SPRT:
         cumulative_llr = 0.0
         decision = Decision.INCONCLUSIVE
         step = 0
+        passes = 0
         while step < self.config.max_steps:
             step += 1
-            cumulative_llr += self.llr_pass if check_outcome(evaluator()) else self.llr_fail
+            outcome = check_outcome(evaluator())
+            passes += outcome
+            cumulative_llr += self.llr_pass if outcome else self.llr_fail
             if cumulative_llr >= self.threshold_a:
                 decision = Decision.KILLED
                 break
@@ -99,4 +90,4 @@ class SPRT:
                 break
 
         logger.debug("SPRT %s after %d step(s) (LLR=%.3f)", decision.value, step, cumulative_llr)
-        return SPRTResult(decision=decision, sample_count=step, cumulative_llr=cumulative_llr)
+        return SPRTResult(decision=decision, sample_count=step, cumulative_llr=cumulative_llr, passes=passes)

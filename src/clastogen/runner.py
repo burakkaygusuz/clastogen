@@ -25,7 +25,7 @@ from clastogen.mutation.http_hook import rewrite_requests
 from clastogen.mutation.injection import override_prompt, resolve_target
 from clastogen.mutation.mutator import PromptMutator
 from clastogen.stats.assertions import compare_pass_counts, drop_upper_bound
-from clastogen.stats.sprt import SPRT, config_from_baseline, estimate_p0, fixed_sample_size
+from clastogen.stats.sprt import SPRT, estimate_p0, fixed_sample_size
 from clastogen.stats.types import SPRTConfig
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,17 @@ _BASELINE_SKIPPED = "test skipped during baseline"
 _BASELINE_UNSTABLE = "baseline: unstable"
 _CANARY_PASSED = "canary: test passes with an empty prompt; read the prompt at call time, or assert on behavior that the prompt causes"
 _BUDGET_EXHAUSTED = "max-calls budget exhausted"
+
+
+def config_from_baseline(
+    outcomes: Sequence[bool], *, delta: float, max_steps: int, alpha: float = 0.05, beta: float = 0.10
+) -> SPRTConfig | None:
+    """Builds the SPRT config from baseline outcomes, or None when the raw pass rate is below MIN_BASELINE_RATE."""
+    if sum(outcomes) / len(outcomes) < MIN_BASELINE_RATE:
+        return None
+    return SPRTConfig.from_absolute_drop(
+        p0=estimate_p0(outcomes), delta=delta, alpha=alpha, beta=beta, max_steps=max_steps
+    )
 
 
 def measure_baseline(

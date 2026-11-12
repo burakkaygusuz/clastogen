@@ -104,24 +104,15 @@ def evaluate_pass_rate(
         )
     )
 
-    samples: list[bool] = []
-
-    def collect_sample() -> bool:
-        outcome = check_outcome(evaluator())
-        samples.append(outcome)
-        return outcome
-
-    res = sprt.run_evaluator(collect_sample)
+    res = sprt.run_evaluator(evaluator)
     passed = res.decision == Decision.SURVIVED or (res.decision == Decision.INCONCLUSIVE and res.cumulative_llr < 0.0)
 
-    n = len(samples)
-    success_count = sum(samples)
-    ci_low, ci_high = compute_wilson_interval(success_count, n, confidence)
+    ci_low, ci_high = compute_wilson_interval(res.passes, res.sample_count, confidence)
     return PassRateResult(
         passed=passed,
-        observed_rate=success_count / n,
-        sample_count=n,
-        success_count=success_count,
+        observed_rate=res.passes / res.sample_count,
+        sample_count=res.sample_count,
+        success_count=res.passes,
         ci_lower=ci_low,
         ci_upper=ci_high,
         confidence=confidence,
