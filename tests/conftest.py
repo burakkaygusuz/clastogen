@@ -1,48 +1,8 @@
-import importlib
 from pathlib import Path
 
 import pytest
 
-import clastogen
-import clastogen.custom_mutants
-import clastogen.exceptions
-import clastogen.models
-import clastogen.mutation.injection
-import clastogen.mutation.mutator
-import clastogen.mutation.structure
-import clastogen.plugin
-import clastogen.reporting.render
-import clastogen.reporting.scoring
-import clastogen.reporting.terminal
-import clastogen.runner
-import clastogen.stats.assertions
-import clastogen.stats.sprt
-import clastogen.stats.types
-import clastogen.suppressions
-import clastogen.trial
-
 pytest_plugins = ["pytester"]
-
-for mod in [
-    clastogen.exceptions,
-    clastogen.stats.types,
-    clastogen.models,
-    clastogen.reporting.scoring,
-    clastogen.reporting.render,
-    clastogen.reporting.terminal,
-    clastogen.mutation.structure,
-    clastogen.suppressions,
-    clastogen.custom_mutants,
-    clastogen.mutation.mutator,
-    clastogen.stats.sprt,
-    clastogen.mutation.injection,
-    clastogen.trial,
-    clastogen.stats.assertions,
-    clastogen.runner,
-    clastogen.plugin,
-    clastogen,
-]:
-    importlib.reload(mod)
 
 
 @pytest.fixture
