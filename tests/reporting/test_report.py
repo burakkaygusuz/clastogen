@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from clastogen.models import BaselineRecord, MutantExecution, MutantStatus, OracleRecord
+from clastogen.models import BaselineRecord, BaselineState, MutantExecution, MutantStatus, OracleRecord
 from clastogen.reporting.render import render_html, render_json, render_markdown
 from clastogen.reporting.scoring import summarize
 
@@ -48,7 +48,7 @@ def test_markdown_lists_survivors_first_and_renders_prompt_text_literally() -> N
             1.0,
         ),
     ]
-    flaky = BaselineRecord("t.py::test_flaky", "app:PROMPT", 5, 10, 0.5, stable=False)
+    flaky = BaselineRecord("t.py::test_flaky", "app:PROMPT", 5, 10, 0.5, BaselineState.UNSTABLE)
     md = render_markdown(summarize(executions), executions, [flaky])
 
     assert md.startswith("## Clastogen mutation testing\n")

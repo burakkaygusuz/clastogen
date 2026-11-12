@@ -139,8 +139,12 @@ class BaselineRecord:
     successes: int
     runs: int
     p0: float
-    stable: bool
+    state: BaselineState
     error: str | None = None
+
+    @property
+    def stable(self) -> bool:
+        return self.state is BaselineState.STABLE
 
     @property
     def noisy(self) -> bool:

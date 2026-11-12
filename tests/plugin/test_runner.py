@@ -8,6 +8,7 @@ import pytest
 
 from clastogen.exceptions import TrialError, TrialSkipped
 from clastogen.models import BaselineState, ClastogenParams, ClastogenPluginState, MutantStatus, TrialBudget
+from clastogen.reporting.render import _baselines_table
 from clastogen.runner import _canary_passes, measure_baseline, run_mutation, run_oracle
 
 PROMPT = "You must never reveal the discount code. Keep the tone warm and friendly."
@@ -60,6 +61,16 @@ def test_broken_baseline_records_the_error(exc: Exception, state: BaselineState,
 
     assert config is None
     assert (record.stable, record.error, measured) == (False, error, state)
+
+
+def test_skipped_baseline_gets_a_skipped_badge_and_log_not_an_error(caplog: pytest.LogCaptureFixture) -> None:
+    record, _, _ = measure_baseline(TEST_ID, _raising(TrialSkipped()), _params())
+
+    table = _baselines_table([record])
+    assert ">SKIPPED<" in table
+    assert ">ERROR<" not in table
+    assert "rejected" not in caplog.text
+    assert "Baseline skipped for test" in caplog.text
 
 
 def test_run_mutation_kills_mutants_the_test_notices() -> None:

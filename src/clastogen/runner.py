@@ -72,15 +72,18 @@ def measure_baseline(
         )
         if config is None:
             state = BaselineState.UNSTABLE
-    if config is None:
+    if state is BaselineState.UNSTABLE:
         logger.warning(
-            "Baseline rejected (%d/%d passed, minimum %.0f%%) for test '%s' targeting '%s'%s.",
+            "Baseline rejected (%d/%d passed, minimum %.0f%%) for test '%s' targeting '%s'.",
             sum(outcomes),
             len(outcomes),
             MIN_BASELINE_RATE * 100,
             test_id,
             params.target,
-            f": {error}" if error else "",
+        )
+    elif state is not BaselineState.STABLE:
+        logger.warning(
+            "Baseline %s for test '%s' targeting '%s': %s", state.value.lower(), test_id, params.target, error
         )
     record = BaselineRecord(
         test_id=test_id,
@@ -88,7 +91,7 @@ def measure_baseline(
         successes=sum(outcomes),
         runs=len(outcomes),
         p0=estimate_p0(outcomes),
-        stable=state is BaselineState.STABLE,
+        state=state,
         error=error,
     )
     return record, state, config
@@ -367,7 +370,7 @@ def to_payload(
     targets: Sequence[str] = (),
 ) -> RecordsPayload:
     return {
-        "baselines": [asdict(b) for b in baselines],
+        "baselines": [{**asdict(b), "state": str(b.state)} for b in baselines],
         "executions": [{**asdict(r), "status": str(r.status)} for r in executions],
         "constraints": list(constraints),
         "unmutated": list(unmutated),
