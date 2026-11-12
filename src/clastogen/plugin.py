@@ -10,6 +10,7 @@ import pytest
 from clastogen.custom_mutants import load_custom_mutants
 from clastogen.models import (
     BaselineRecord,
+    BaselineState,
     ClastogenParams,
     ClastogenPluginState,
     MutantExecution,
@@ -98,7 +99,9 @@ class _RecordCollector:
             self._state.unmutated.update((target, sentence) for target, sentence in records["unmutated"])
             self._state.tests.update(records["tests"])
             self._state.measured_targets.update(records["targets"])
-            self._state.baselines.extend(BaselineRecord(**b) for b in records["baselines"])
+            for b in records["baselines"]:
+                baseline: dict[str, Any] = {**b, "state": BaselineState(b["state"])}
+                self._state.baselines.append(BaselineRecord(**baseline))
             self._state.oracle.extend(OracleRecord(**o) for o in records["oracle"])
             for r in records["executions"]:
                 fields: dict[str, Any] = {**r, "status": MutantStatus(r["status"])}

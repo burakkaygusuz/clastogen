@@ -5,7 +5,14 @@ from dataclasses import asdict
 from html import escape
 from importlib.resources import files
 
-from clastogen.models import MIN_BASELINE_RATE, BaselineRecord, MutantExecution, MutantStatus, MutationSummary
+from clastogen.models import (
+    MIN_BASELINE_RATE,
+    BaselineRecord,
+    BaselineState,
+    MutantExecution,
+    MutantStatus,
+    MutationSummary,
+)
 from clastogen.reporting.scoring import (
     MEASURED,
     MERGE_NOTE,
@@ -218,16 +225,22 @@ def _results_table(
     )
 
 
+_BASELINE_BADGES = {
+    BaselineState.STABLE: ("STABLE", "var(--killed)"),
+    BaselineState.UNSTABLE: ("FLAKY", "var(--survived)"),
+    BaselineState.SKIPPED: ("SKIPPED", "var(--other)"),
+    BaselineState.ERRORED: ("ERROR", "var(--error)"),
+}
+
+
 def _baselines_table(baselines: Sequence[BaselineRecord]) -> str:
     if not baselines:
         return '<p class="empty">No baselines were recorded.</p>'
 
     def badge(b: BaselineRecord) -> str:
-        if b.error:
-            return _badge("ERROR", "var(--error)")
         if b.noisy:
             return _badge("NOISY", "var(--inconclusive)")
-        return _badge("STABLE", "var(--killed)") if b.stable else _badge("FLAKY", "var(--survived)")
+        return _badge(*_BASELINE_BADGES[b.state])
 
     rows = "".join(
         f"<tr><td>{badge(b)}</td>"
@@ -316,7 +329,7 @@ def render_markdown(
     if summary.unmutated:
         lines += ["", "Unmutated sentences (no rule keyword or digit, so no rule-level mutant):", ""]
         lines += [f"- {_code(sentence)}" for _, sentence in summary.unmutated]
-    if flaky := [b.test_id.split("::")[-1] for b in baselines if not b.stable and not b.error]:
+    if flaky := [b.test_id.split("::")[-1] for b in baselines if b.state is BaselineState.UNSTABLE]:
         lines += ["", f"Flaky tests (not mutated): {', '.join(map(_code, flaky))}"]
     if noisy := [b.test_id.split("::")[-1] for b in baselines if b.noisy]:
         lines += ["", f"Noisy baselines (false KILLs can exceed alpha): {', '.join(map(_code, noisy))}"]
@@ -352,7 +365,7 @@ def render_json(
         "unmutated_sentences": [{"target": t, "sentence": x} for t, x in summary.unmutated],
         "results": [asdict(r) for r in summary.results],
         "executions": [asdict(r) for r in executions],
-        "baselines": [{**asdict(b), "noisy": b.noisy} for b in baselines],
+        "baselines": [{**asdict(b), "stable": b.stable, "noisy": b.noisy} for b in baselines],
     }
     if (e := exposure(summary)) is not None:
         report["behavior"] = {**e, "labels": summary.behavior}

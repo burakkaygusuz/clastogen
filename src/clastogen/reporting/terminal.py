@@ -10,6 +10,7 @@ from clastogen.models import (
     MIN_BASELINE_RATE,
     NOISY_BASELINE_RATE,
     BaselineRecord,
+    BaselineState,
     ClastogenPluginState,
     MutantExecution,
     MutantStatus,
@@ -48,7 +49,7 @@ _STATUS_MARKUP: dict[MutantStatus, dict[str, bool]] = {
 def _write_baselines(terminalreporter: pytest.TerminalReporter, baselines: list[BaselineRecord], verbose: bool) -> None:
     """Writes one line for all stable baselines (one per test with -v) after the full list of flaky ones."""
     stable = [b for b in baselines if b.stable]
-    flaky = [b for b in baselines if not b.stable and not b.error]
+    flaky = [b for b in baselines if b.state is BaselineState.UNSTABLE]
     if flaky:
         title = f"Flaky tests (not mutated: baseline pass rate < {MIN_BASELINE_RATE:.0%})"
         terminalreporter.write_sep("-", title, yellow=True)
