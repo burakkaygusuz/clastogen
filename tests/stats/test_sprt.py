@@ -29,6 +29,7 @@ def test_sprt_three_consecutive_fails_kills_at_step_three() -> None:
 
     check.equal(result.decision, Decision.KILLED)
     check.equal(result.sample_count, 3)
+    check.equal(result.passes, 0)
     check.greater_equal(result.cumulative_llr, sprt.threshold_a)
 
 

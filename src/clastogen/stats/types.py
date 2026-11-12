@@ -65,6 +65,7 @@ class SPRTResult:
     decision: Decision
     sample_count: int
     cumulative_llr: float
+    passes: int
 
 
 @dataclass(frozen=True, slots=True)
