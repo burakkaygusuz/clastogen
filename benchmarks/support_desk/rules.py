@@ -18,12 +18,20 @@ from clastogen.reporting.scoring import MERGE_NOTE, summarize
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results" / pi_client.MODEL.removeprefix("openrouter/").replace("/", "_")
 HEADING = "## Per-rule evidence"
+RULE_FREE_OPERATORS = ("delete_section", "delete_example")
 
 
 def rule_rows(runs: list[dict]) -> list[dict]:
     per_run = []
     for run in runs:
-        fields: list[dict[str, Any]] = [{**e, "status": MutantStatus(e["status"])} for e in run["executions"]]
+        fields: list[dict[str, Any]] = [
+            {
+                **e,
+                "status": MutantStatus(e["status"]),
+                "rules": () if e["operator_name"].startswith(RULE_FREE_OPERATORS) else (e["original_snippet"],),
+            }
+            for e in run["executions"]
+        ]
         executions = [MutantExecution(**f) for f in fields]
         rules = {
             (r["target"], r["original_snippet"])

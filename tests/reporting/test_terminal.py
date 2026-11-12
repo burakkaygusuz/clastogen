@@ -38,13 +38,15 @@ def _write(state: ClastogenPluginState, **options: bool) -> list[str]:
 
 def _execution(status: MutantStatus) -> MutantExecution:
     return MutantExecution(
-        "t.py::test_a", "app:P", "m1", "Deleted constraint: 'x'", "delete_constraint", "x", "", status
+        "t.py::test_a", "app:P", "m1", "Deleted constraint: 'x'", "delete_constraint", "x", "", status, rules=("x",)
     )
 
 
 def test_inconclusive_hint_names_the_split_of_the_inconclusive_target() -> None:
     def execution(target: str, mutant_id: str, status: MutantStatus) -> MutantExecution:
-        return MutantExecution("t.py::test_a", target, mutant_id, "d", "delete_constraint", "x", "", status)
+        return MutantExecution(
+            "t.py::test_a", target, mutant_id, "d", "delete_constraint", "x", "", status, rules=("x",)
+        )
 
     state = ClastogenPluginState(tests={"app:A": 12, "app:B": 1})
     state.executions = [
@@ -82,7 +84,7 @@ def test_a_survivor_is_listed_with_the_test_that_passed_it() -> None:
 
 def test_terminal_snapshot_of_per_rule_evidence_caps_rows_and_sentences() -> None:
     def run(test_id: str, mutant_id: str, rule: str, status: MutantStatus) -> MutantExecution:
-        return MutantExecution(test_id, "app:P", mutant_id, "d", "op", rule, "", status)
+        return MutantExecution(test_id, "app:P", mutant_id, "d", "op", rule, "", status, rules=(rule,))
 
     executions = [
         run("t.py::test_b", "m1", "never leak", MutantStatus.KILLED),

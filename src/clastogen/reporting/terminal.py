@@ -16,7 +16,6 @@ from clastogen.models import (
     MutantStatus,
     MutationSummary,
     RunPlan,
-    snippet_covers,
 )
 from clastogen.reporting.render import STATUS_LABELS, by_status, kill_hint
 from clastogen.reporting.scoring import (
@@ -144,19 +143,12 @@ def _write_rules(terminalreporter: pytest.TerminalReporter, summary: MutationSum
             r for r in summary.results if r.operator_name == CUSTOM_OPERATOR and r.status == MutantStatus.SUPPRESSED
         ]
         if any(
-            not any(s.target == r.target and snippet_covers(s.original_snippet, r.rule) for s in suppressed)
+            not any(s.target == r.target and r.rule in s.rules for s in suppressed)
             for r in summary.rules
             if r.status == "untested"
         ):
             terminalreporter.write_line("    Untested: raise max_mutants, fix errors or add tests.", light=True)
-    stray = sorted(
-        {
-            r.description
-            for r in summary.results
-            if r.operator_name == CUSTOM_OPERATOR
-            and not any(x.target == r.target and snippet_covers(r.original_snippet, x.rule) for x in summary.rules)
-        }
-    )
+    stray = sorted({r.description for r in summary.results if r.operator_name == CUSTOM_OPERATOR and not r.rules})
     if stray:
         terminalreporter.write_line(
             f"Custom mutants that match no single sentence (they run, but credit no rule): {'; '.join(stray)}",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Callable, Sequence
 from decimal import Decimal, localcontext
@@ -7,10 +8,19 @@ from functools import partial
 from itertools import zip_longest
 from typing import NamedTuple
 
-from clastogen.models import CUSTOM_OPERATOR, CustomMutant, Mutant, snippet_covers
+from clastogen.models import CUSTOM_OPERATOR, CustomMutant, Mutant
 from clastogen.mutation.structure import Block, find_blocks
 
 _LIST_MARKER = r"(?:[-*]|\d+[.)])\s+"
+
+
+def snippet_covers(original: str, sentence: str) -> bool:
+    """True when a custom mutant's original snippet, minus surrounding whitespace and trailing .!?;:, sits inside the sentence.
+
+    Sentences are stored without their trailing punctuation, so an original copied with its period must still match.
+    """
+    core = original.strip().rstrip(".!?;:").rstrip()
+    return bool(core) and core in sentence
 
 
 class Rule(NamedTuple):
@@ -316,7 +326,19 @@ class PromptMutator:
                 raise ValueError(
                     f"Two different mutants of one prompt share mutant ID {m.id}: '{other.operator_name}' and '{m.operator_name}'"
                 )
-        return list(unique.values())
+        candidates = self.extract_candidate_rules(prompt)
+        return [dataclasses.replace(m, rules=self._credited(m, candidates)) for m in unique.values()]
+
+    def _credited(self, mutant: Mutant, candidates: Sequence[str]) -> tuple[str, ...]:
+        """The candidate rules a mutant credits: its own original, and for a custom mutant every sentence its original sits in."""
+        return tuple(
+            dict.fromkeys(
+                r
+                for r in candidates
+                if mutant.original_snippet == r
+                or (mutant.operator_name == CUSTOM_OPERATOR and snippet_covers(mutant.original_snippet, r))
+            )
+        )
 
     def _builtin_mutants(self, prompt: str, max_mutants: int) -> Sequence[Mutant]:
         """Generates a bounded sequence of mutants (deletions, negation inversions, modal weakenings, threshold changes, dropped exceptions, flipped comparators, narrowed scopes, deleted sections and examples)."""

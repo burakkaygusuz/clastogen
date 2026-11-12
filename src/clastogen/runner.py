@@ -119,6 +119,7 @@ def _execution(
         llr=llr,
         error=error,
         fixed_n=fixed_n,
+        rules=mutant.rules,
     )
 
 

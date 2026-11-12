@@ -54,15 +54,6 @@ CANARY_RUNS = 3
 CUSTOM_OPERATOR = "custom"
 
 
-def snippet_covers(original: str, sentence: str) -> bool:
-    """True when a custom mutant's original snippet, minus surrounding whitespace and trailing .!?;:, sits inside the sentence.
-
-    Sentences are stored without their trailing punctuation, so an original copied with its period must still match.
-    """
-    core = original.strip().rstrip(".!?;:").rstrip()
-    return bool(core) and core in sentence
-
-
 @dataclass(frozen=True)
 class CustomMutant:
     """A hand- or agent-written mutant from .clastogen/mutants.toml; mutated "" deletes the snippet."""
@@ -84,6 +75,7 @@ class Mutant:
     mutated_snippet: str
     mutated_prompt: str
     description: str
+    rules: tuple[str, ...] = ()
 
     @classmethod
     def create(
@@ -128,6 +120,7 @@ class MutantExecution:
     llr: float | None = None
     error: str | None = None
     fixed_n: int | None = None
+    rules: tuple[str, ...] = field(kw_only=True)
 
 
 @dataclass(frozen=True)
