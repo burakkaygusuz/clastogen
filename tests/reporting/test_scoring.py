@@ -35,6 +35,7 @@ def _exec(mutant_id: str, status: MutantStatus, test_id: str = "t::a") -> Mutant
         status=status,
         sample_count=3,
         llr=0.5,
+        rules=("rule",),
     )
 
 
@@ -153,7 +154,7 @@ def test_summarize_is_invariant_under_permutation(records: list[MutantExecution]
 
 def test_operator_rates_and_constraint_coverage() -> None:
     def run(mutant_id: str, op: str, rule: str, status: MutantStatus) -> MutantExecution:
-        return replace(_exec(mutant_id, status), operator_name=op, original_snippet=rule)
+        return replace(_exec(mutant_id, status), operator_name=op, original_snippet=rule, rules=(rule,))
 
     summary = summarize(
         [

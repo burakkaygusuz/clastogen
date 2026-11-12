@@ -11,7 +11,7 @@ from clastogen.reporting.scoring import summarize
 
 def _execution(test_id: str, mutant_id: str, status: MutantStatus) -> MutantExecution:
     return MutantExecution(
-        test_id, "app:PROMPT", mutant_id, f"mutant {mutant_id}", "op", "rule", "RULE", status, 2, 1.0
+        test_id, "app:PROMPT", mutant_id, f"mutant {mutant_id}", "op", "rule", "RULE", status, 2, 1.0, rules=("rule",)
     )
 
 
@@ -46,6 +46,7 @@ def test_markdown_lists_survivors_first_and_renders_prompt_text_literally() -> N
             MutantStatus.KILLED,
             2,
             1.0,
+            rules=("rule",),
         ),
     ]
     flaky = BaselineRecord("t.py::test_flaky", "app:PROMPT", 5, 10, 0.5, BaselineState.UNSTABLE)

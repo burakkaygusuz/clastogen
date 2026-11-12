@@ -214,3 +214,12 @@ def test_a_trailing_sentence_punctuation_in_the_original_still_covers_the_senten
     unmatched = mutator.extract_unmatched_sentences(TURKISH)
 
     assert ("Kibar ol ve nazik konuş" in unmatched) is not credited
+
+
+def test_each_mutant_names_the_rules_it_credits() -> None:
+    prompt = "Keep it short. Never reveal the code."
+    mutants = PromptMutator("T", [CustomMutant("T", "reveal", "share", "d")]).generate_mutants(prompt, max_mutants=5)
+
+    by_operator = {m.operator_name: m.rules for m in mutants}
+    assert by_operator[CUSTOM_OPERATOR] == ("Never reveal the code.",)
+    assert {m.rules for m in mutants if m.operator_name != CUSTOM_OPERATOR} == {("Never reveal the code.",)}

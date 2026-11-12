@@ -3,14 +3,12 @@ from typing import Any
 
 from clastogen.models import (
     BEHAVIOR_ORDER,
-    CUSTOM_OPERATOR,
     Behavior,
     MutantExecution,
     MutantStatus,
     MutationSummary,
     OracleRecord,
     RuleCoverage,
-    snippet_covers,
 )
 from clastogen.stats.assertions import compute_wilson_interval
 
@@ -34,15 +32,7 @@ def _rule_coverage(
     measured = [r for r in unique if r.status in MEASURED]
     rows = []
     for target, rule in sorted(set(constraints)):
-        mutants = [
-            r
-            for r in measured
-            if r.target == target
-            and (
-                r.original_snippet == rule
-                or (r.operator_name == CUSTOM_OPERATOR and snippet_covers(r.original_snippet, rule))
-            )
-        ]
+        mutants = [r for r in measured if r.target == target and rule in r.rules]
         killers = [r.test_id for r in mutants if r.status == MutantStatus.KILLED]
         rows.append(RuleCoverage(target, rule, len(killers), len(mutants), min(killers, default=None)))
     return tuple(rows)
