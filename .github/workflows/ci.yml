@@ -55,9 +55,9 @@ jobs:
 
       - name: Run test suite with coverage
         run: |
-          uv run coverage run -m pytest
-          uv run coverage report
-          uv run coverage xml
+          uv run --locked --no-build coverage run -m pytest
+          uv run --locked --no-build coverage report
+          uv run --locked --no-build coverage xml
 
       - name: Run demo and examples under Clastogen with pytest-xdist
         run: |
