@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tests.plugin import AGENT, STRONG, WEAK
+from tests.plugin.helpers import AGENT, STRONG, WEAK
 
 
 def test_parallel_workers_reach_the_same_verdicts_as_a_serial_run(

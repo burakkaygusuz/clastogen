@@ -5,7 +5,7 @@ import json
 import pytest
 from pytest_check import check
 
-from tests.plugin import AGENT, WEAK
+from tests.plugin.helpers import AGENT, WEAK
 
 _UNRELATED = """
 @pytest.mark.clastogen(target="agent:PROMPT", max_mutants=2)

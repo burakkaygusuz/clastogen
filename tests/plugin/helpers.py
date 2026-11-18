@@ -1,4 +1,4 @@
-"""Tests for pytest-clastogen plugin."""
+"""Shared fixtures source for plugin tests."""
 
 AGENT = '''
 PROMPT = """You must never approve refunds over $50.

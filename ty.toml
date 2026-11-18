@@ -1,0 +1,9 @@
+[environment]
+extra-paths = ["benchmarks/support_desk"]
+
+[analysis]
+# Optional: the DeepEval example skips without deepeval; atheris is Linux-only.
+allowed-unresolved-imports = ["deepeval.**", "atheris"]
+
+[rules]
+unused-ignore-comment = "error"

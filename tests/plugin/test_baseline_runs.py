@@ -5,7 +5,7 @@ import json
 import pytest
 from pytest_check import check
 
-from tests.plugin import AGENT
+from tests.plugin.helpers import AGENT
 
 
 def test_baseline_performs_ten_runs_and_reports_laplace_p0(pytester: pytest.Pytester) -> None:

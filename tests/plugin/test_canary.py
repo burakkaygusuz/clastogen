@@ -6,7 +6,7 @@ import pytest
 
 from clastogen.models import ClastogenParams
 from clastogen.runner import plan_test
-from tests.plugin import AGENT
+from tests.plugin.helpers import AGENT
 
 _CANARY = "canary: test passes with an empty prompt; read the prompt at call time, or assert on behavior that the prompt causes"
 

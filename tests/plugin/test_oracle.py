@@ -5,7 +5,7 @@ import json
 import pytest
 from pytest_check import check
 
-from tests.plugin import AGENT, STRONG, WEAK
+from tests.plugin.helpers import AGENT, STRONG, WEAK
 
 PROBE = """
 import pytest, agent

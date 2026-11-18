@@ -1,0 +1,53 @@
+line-length = 120
+target-version = "py311"
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+
+[lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "B",
+    "ANN",
+    "UP",
+    "SIM",
+    "PT",
+    "S",
+    "BLE",
+    "PIE",
+    "PERF",
+    "RUF",
+    "C901",
+    "A",
+    "C4",
+    "DTZ",
+    "ERA",
+    "FA",
+    "FURB",
+    "G",
+    "LOG",
+    "PGH",
+    "PLE",
+    "PLW",
+    "PTH",
+    "PYI",
+    "RET",
+    "RSE",
+    "TID",
+    "TRY",
+]
+ignore = ["E501", "TRY003"]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101"]
+"scripts/*" = ["S101", "S311"]
+"examples/*" = ["S101", "S311"]
+"src/clastogen/demo/*" = ["S101"]
+"fuzz/*" = ["S101"]
+"benchmarks/*" = ["S101", "S603", "S607"]

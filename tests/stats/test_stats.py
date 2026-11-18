@@ -2,6 +2,7 @@ import itertools
 import math
 from collections.abc import Callable
 from statistics import NormalDist
+from typing import cast
 
 import pytest
 from hypothesis import given
@@ -184,7 +185,7 @@ def test_wilson_interval_hypothesis_property(k: int, n: int) -> None:
 
 def test_unpaired_regression_rejects_non_bool_evaluator_output() -> None:
     def bad() -> bool:
-        return 1  # ty: ignore[invalid-return-type]
+        return cast(bool, 1)
 
     with pytest.raises(TypeError, match="bool"):
         evaluate_regression(bad, lambda: True, sample_count=5, paired=False)

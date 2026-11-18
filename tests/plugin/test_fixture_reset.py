@@ -9,7 +9,7 @@ from pytest_check import check
 
 from clastogen.exceptions import TrialError
 from clastogen.trial import run_trial, soft_failed
-from tests.plugin import AGENT
+from tests.plugin.helpers import AGENT
 
 
 def test_failing_fixture_teardown_marks_mutants_error_without_stale_trials(pytester: pytest.Pytester) -> None:
