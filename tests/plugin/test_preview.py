@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.plugin import AGENT
+from tests.plugin.helpers import AGENT
 
 _TESTS = """
 import pytest

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from tests.plugin import AGENT
+from tests.plugin.helpers import AGENT
 
 _TEST = """
 import pytest, agent

@@ -44,15 +44,15 @@ clastogen = "clastogen.plugin"
 
 [dependency-groups]
 dev = [
-    "anthropic>=2.6.0",
+    "anthropic>=2.10.0",
     "httpx>=0.28.1",
     "hypothesis>=6.170.15",
-    "openai>=3.46.0",
-    "pytest-check>=3.0.3",
+    "openai>=3.55.1",
+    "pytest-check>=3.1.0",
     "coverage>=7.17.3",
     "pytest-xdist>=3.8.0",
     "ruff>=0.17.4",
-    "ty>=0.0.99",
+    "ty>=0.0.106",
 ]
 
 [tool.semantic_release]
@@ -69,77 +69,10 @@ build_command = """
 [tool.semantic_release.commit_parser_options]
 patch_tags = ["fix", "perf", "refactor"]
 
-[tool.ruff]
-line-length = 120
-target-version = "py311"
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
-docstring-code-format = true
-
-[tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "W",
-    "I",
-    "B",
-    "ANN",
-    "UP",
-    "SIM",
-    "PT",
-    "S",
-    "BLE",
-    "PIE",
-    "PERF",
-    "RUF",
-    "C901",
-    "A",
-    "C4",
-    "DTZ",
-    "ERA",
-    "FA",
-    "FURB",
-    "G",
-    "LOG",
-    "PGH",
-    "PLE",
-    "PLW",
-    "PTH",
-    "PYI",
-    "RET",
-    "RSE",
-    "TID",
-    "TRY",
-]
-ignore = [
-    "E501",
-    "TRY003",
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
-"scripts/*" = ["S101", "S311"]
-"examples/*" = ["S101", "S311"]
-"src/clastogen/demo/*" = ["S101"]
-"fuzz/*" = ["S101"]
-"benchmarks/*" = ["S101", "S603", "S607"]
-
-[tool.ty.environment]
-extra-paths = ["benchmarks/support_desk"]
-
-[tool.ty.analysis]
-# Optional: the DeepEval example skips without deepeval; atheris is Linux-only.
-allowed-unresolved-imports = ["deepeval.**", "atheris"]
-
-[tool.ty.rules]
-unused-ignore-comment = "error"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", ".", "benchmarks/support_desk"]
+pythonpath = ["src", "."]
+addopts = ["--import-mode=importlib"]
 strict = true
 filterwarnings = ["error"]
 
